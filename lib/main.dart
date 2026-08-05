@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'injection_container.dart' as di;
 
 import 'features/auth/presentation/bloc/auth_bloc.dart';
+import 'features/activity_tracking/presentation/bloc/activity_bloc.dart'; // <-- EKLENDİ
 import 'features/auth/presentation/pages/login_page.dart';
 
 void main() async {
@@ -26,9 +27,13 @@ class SyncRunApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // MultiBlocProvider ile uygulamanın en üst seviyesinden Bloc'ları sağlıyoruz.
-    // İleride ActivityBloc gibi diğer Bloc'ları da buraya ekleyeceğiz.
     return MultiBlocProvider(
-      providers: [BlocProvider<AuthBloc>(create: (_) => di.sl<AuthBloc>())],
+      providers: [
+        BlocProvider<AuthBloc>(create: (_) => di.sl<AuthBloc>()),
+        BlocProvider<ActivityBloc>(
+          create: (_) => di.sl<ActivityBloc>(),
+        ), // <-- EKLENDİ
+      ],
       child: MaterialApp(
         title: 'SyncRun',
         debugShowCheckedModeBanner: false,

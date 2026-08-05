@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+// TrackingPage importunu ekledik
+import '../../../activity_tracking/presentation/pages/tracking_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,9 +16,6 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-
-  // Giriş mi yapıyoruz, kayıt mı oluyoruz? (Sayfanın modunu tutar)
-  bool _isLogin = true;
 
   @override
   void dispose() {
@@ -38,15 +37,19 @@ class _LoginPageState extends State<LoginPage> {
               ),
             );
           } else if (state is AuthAuthenticated) {
+            // Başarılı giriş: Kullanıcıya kısa bir bildirim göster
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  _isLogin
-                      ? 'Giriş Başarılı! 🏃‍♂️'
-                      : 'Hesap Oluşturuldu! 🏃‍♂️',
-                ),
-                backgroundColor: const Color(0xFF00E676),
+              const SnackBar(
+                content: Text('Giriş Başarılı! 🏃‍♂️'),
+                backgroundColor: Color(0xFF00E676),
+                duration: Duration(seconds: 1),
               ),
+            );
+
+            // Yönlendirme işlemi: pushReplacement ile login sayfasını yığından (stack) atıyoruz ki,
+            // kullanıcı telefondaki 'Geri' tuşuna bastığında tekrar Login ekranına dönmesin.
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const TrackingPage()),
             );
           }
         },
@@ -64,13 +67,10 @@ class _LoginPageState extends State<LoginPage> {
                     color: Color(0xFF00E676),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    _isLogin ? 'SyncRun\'a Giriş Yap' : 'SyncRun\'a Katıl',
+                  const Text(
+                    'SyncRun',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 48),
 
@@ -102,29 +102,23 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Ana Buton (Giriş veya Kayıt)
+                  // Giriş Butonu
                   ElevatedButton(
                     onPressed: state is AuthLoading
                         ? null
                         : () {
-                            final email = _emailController.text.trim();
-                            final password = _passwordController.text.trim();
-
-                            // Sayfanın moduna göre doğru Event'i BLoC'a gönderiyoruz
-                            if (_isLogin) {
-                              context.read<AuthBloc>().add(
-                                SignInRequested(email, password),
-                              );
-                            } else {
-                              context.read<AuthBloc>().add(
-                                SignUpRequested(email, password),
-                              );
-                            }
+                            context.read<AuthBloc>().add(
+                              SignInRequested(
+                                _emailController.text.trim(),
+                                _passwordController.text.trim(),
+                              ),
+                            );
                           },
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: const Color(0xFF00E676),
-                      foregroundColor: Colors.black,
+                      foregroundColor:
+                          Colors.black, // Neon yeşil üzerinde siyah yazı
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -138,29 +132,13 @@ class _LoginPageState extends State<LoginPage> {
                               strokeWidth: 2,
                             ),
                           )
-                        : Text(
-                            _isLogin ? 'Giriş Yap' : 'Kayıt Ol',
-                            style: const TextStyle(
+                        : const Text(
+                            'Giriş Yap',
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Mod Değiştirici TextButton (Hesabın yok mu? Kayıt Ol)
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _isLogin = !_isLogin;
-                      });
-                    },
-                    child: Text(
-                      _isLogin
-                          ? 'Hesabın yok mu? Yeni hesap oluştur'
-                          : 'Zaten hesabın var mı? Giriş yap',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
                   ),
                 ],
               ),
