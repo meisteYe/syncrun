@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "200591673771",
+    "project_id": "syncrun-e84b0",
+    "storage_bucket": "syncrun-e84b0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:200591673771:android:9daf3c6a626a6405aceaee",
+        "android_client_info": {
+          "package_name": "com.syncrun.syncrun"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5rs5WPCm05E6q9NnzF9Yvqe8SK0wtIns"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
