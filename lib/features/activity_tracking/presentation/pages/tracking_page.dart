@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import '../bloc/activity_bloc.dart';
 import '../bloc/activity_event.dart';
 import '../bloc/activity_state.dart';
+import 'history_page.dart'; // YENİ: Geçmiş sayfası import edildi
 
 class TrackingPage extends StatelessWidget {
   const TrackingPage({super.key});
@@ -16,6 +17,20 @@ class TrackingPage extends StatelessWidget {
         title: const Text('SyncRun Takip'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        // YENİ: AppBar'ın sağına buton ekliyoruz
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history, color: Colors.white),
+            tooltip: 'Geçmiş Antrenmanlar',
+            onPressed: () {
+              // Butona basıldığında HistoryPage sayfasına yönlendir
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HistoryPage()),
+              );
+            },
+          ),
+        ],
       ),
       extendBodyBehindAppBar: true,
       body: BlocBuilder<ActivityBloc, ActivityState>(
