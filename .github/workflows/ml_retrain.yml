@@ -39,13 +39,19 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # 1. Uzaktaki değişiklikleri al
+          git fetch origin main
+
+          # 2. Mevcut repoyu güncelle
+          git reset --hard origin/main
+
+          # 3. Dosyaları ekle
           git add ml_pipeline/syncrun_pace_model.cbm
           git add ml_pipeline/syncrun_activities_ml_ready.csv
 
-          # Hata almamak için önce güncel değişiklikleri çek ve birleştir
-          git pull --rebase origin main
-
+          # 4. Commit at (değişiklik yoksa atla)
           git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || echo "Değişiklik yok"
 
-          # token ile pushla
+          # 5. Token ile zorla pushla
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
