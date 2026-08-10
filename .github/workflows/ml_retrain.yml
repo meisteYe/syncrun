@@ -41,5 +41,11 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add ml_pipeline/syncrun_pace_model.cbm
           git add ml_pipeline/syncrun_activities_ml_ready.csv
-          git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || echo "Değişiklik yok, commit atlanıyor"
-          git push
+
+          # Hata almamak için önce güncel değişiklikleri çek ve birleştir
+          git pull --rebase origin main
+
+          git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || echo "Değişiklik yok"
+
+          # token ile pushla
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
