@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase Service Account Key
+/ml_pipeline/syncrun-firebase-adminsdk.json
+
+/ml_pipeline/.venv/
