@@ -1,17 +1,16 @@
 name: SyncRun ML Nightly Retrain
 
-# Ne zaman çalışacak?
 on:
   schedule:
-    - cron: "0 3 * * *" # Her gece saat 03:00 (UTC)
-  workflow_dispatch: {} # Github paneline ekleyeceğimiz manuel "Şimdi Çalıştır" butonu
+    - cron: "0 3 * * *"
+  workflow_dispatch:
 
 jobs:
   retrain-model:
-    runs-on: ubuntu-latest # Geçici sunucu olarak Ubuntu Linux kullan
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Repoyu Klonla (Checkout)
+      - name: Repoyu Klonla
         uses: actions/checkout@v3
 
       - name: Python 3.11 Kurulumu
@@ -19,12 +18,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      # En kritik adım: JSON dosyasını Secrets'tan çıkarıp klasörün içine yaratıyoruz
       - name: Firebase JSON Anahtarını Oluştur
         run: |
           echo "${{ secrets.FIREBASE_CREDENTIALS }}" > ml_pipeline/syncrun-firebase-adminsdk.json
 
-      - name: Bağımlılıkları Yükle (Requirements)
+      - name: Bağımlılıkları Yükle
         run: |
           cd ml_pipeline
           pip install -r requirements.txt
@@ -35,14 +33,11 @@ jobs:
           python data_pipeline.py
           python train_model.py
 
-      # Sadece model ve veri dosyasını commit ediyoruz
-      - name: Yeni Modeli Github'a Gönder (Push)
+      - name: Yeni Modeli Github'a Gönder
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add ml_pipeline/syncrun_pace_model.cbm
           git add ml_pipeline/syncrun_activities_ml_ready.csv
-
-          # Eğer yeni koşu yoksa ve model aynıysa hata vermemesi için '|| true' kullanıyoruz
           git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || true
           git push
