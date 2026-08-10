@@ -5,7 +5,9 @@ import 'package:latlong2/latlong.dart';
 import '../bloc/activity_bloc.dart';
 import '../bloc/activity_event.dart';
 import '../bloc/activity_state.dart';
-import 'history_page.dart'; // YENİ: Geçmiş sayfası import edildi
+import 'history_page.dart';
+import '../../../../core/network/prediction_service.dart'; // ML Servisi
+import '../../../../injection_container.dart'; // Dependency Injection
 
 class TrackingPage extends StatelessWidget {
   const TrackingPage({super.key});
@@ -17,13 +19,11 @@ class TrackingPage extends StatelessWidget {
         title: const Text('SyncRun Takip'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        // YENİ: AppBar'ın sağına buton ekliyoruz
         actions: [
           IconButton(
             icon: const Icon(Icons.history, color: Colors.white),
             tooltip: 'Geçmiş Antrenmanlar',
             onPressed: () {
-              // Butona basıldığında HistoryPage sayfasına yönlendir
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const HistoryPage()),
@@ -47,34 +47,28 @@ class TrackingPage extends StatelessWidget {
             return Stack(
               children: [
                 FlutterMap(
-                  // YENİ API: center yerine initialCenter, zoom yerine initialZoom kullanılıyor
                   options: MapOptions(
                     initialCenter: currentPoint,
                     initialZoom: 17.0,
-                    // YENİ API: interactionOptions kullanımı
                     interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                     ),
                   ),
                   children: [
-                    // Koyu temalı (Dark Matter) harita
                     TileLayer(
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.syncrun.app',
                     ),
-                    // YENİ API: isDotted kaldırıldı, pattern (desen) eklendi
                     PolylineLayer(
                       polylines: [
                         Polyline(
                           points: state.routePoints,
                           strokeWidth: 5.0,
                           color: const Color(0xFF00E676),
-                          // pattern: const StrokePattern.solid(), // Gerekirse kesik çizgi için kullanılabilir
                         ),
                       ],
                     ),
-                    // YENİ API: builder yerine child kullanılıyor
                     MarkerLayer(
                       markers: [
                         Marker(
@@ -85,10 +79,7 @@ class TrackingPage extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: Colors.blueAccent,
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 2,
-                              ), // Noktaya beyaz bir dış çizgi ekledim, daha şık durur
+                              border: Border.all(color: Colors.white, width: 2),
                             ),
                           ),
                         ),
@@ -138,15 +129,38 @@ class TrackingPage extends StatelessWidget {
       floatingActionButton: BlocBuilder<ActivityBloc, ActivityState>(
         builder: (context, state) {
           if (state is ActivityInitial || state is ActivityCompleted) {
-            return FloatingActionButton.extended(
-              onPressed: () =>
-                  context.read<ActivityBloc>().add(StartActivity()),
-              backgroundColor: const Color(0xFF00E676),
-              icon: const Icon(Icons.play_arrow, color: Colors.black),
-              label: const Text('Başla', style: TextStyle(color: Colors.black)),
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Yapay Zeka Tahmin Butonu
+                FloatingActionButton.extended(
+                  heroTag: 'ai_btn',
+                  onPressed: () => _showPredictionDialog(context),
+                  backgroundColor: Colors.deepPurpleAccent,
+                  icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                  label: const Text(
+                    'Akıllı Tahmin',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Klasik Başla Butonu
+                FloatingActionButton.extended(
+                  heroTag: 'start_btn',
+                  onPressed: () =>
+                      context.read<ActivityBloc>().add(StartActivity()),
+                  backgroundColor: const Color(0xFF00E676),
+                  icon: const Icon(Icons.play_arrow, color: Colors.black),
+                  label: const Text(
+                    'Başla',
+                    style: TextStyle(color: Colors.black),
+                  ),
+                ),
+              ],
             );
           } else if (state is ActivityTracking) {
             return FloatingActionButton.extended(
+              heroTag: 'stop_btn',
               onPressed: () => context.read<ActivityBloc>().add(StopActivity()),
               backgroundColor: Colors.redAccent,
               icon: const Icon(Icons.stop),
@@ -157,6 +171,129 @@ class TrackingPage extends StatelessWidget {
         },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  // Tahmin Diyaloğu Metodu
+  void _showPredictionDialog(BuildContext context) {
+    final TextEditingController distanceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text(
+            'Hedef Mesafeni Gir (Metre)',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: distanceController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Örn: 5000 (5km için)',
+              hintStyle: const TextStyle(color: Colors.grey),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey[700]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF00E676)),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E676),
+              ),
+              onPressed: () async {
+                final distanceText = distanceController.text.trim();
+                if (distanceText.isEmpty) return;
+
+                final distance = double.tryParse(distanceText);
+                if (distance == null) return;
+
+                Navigator.pop(dialogContext); // İlk diyaloğu kapat
+
+                // Yükleniyor diyaloğu göster
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF00E676)),
+                  ),
+                );
+
+                try {
+                  // Render.com'daki API'mize istek atıyoruz
+                  final prediction = await sl<PredictionService>()
+                      .getPacePrediction(distance);
+
+                  // Yükleniyor diyaloğunu kapat
+                  if (context.mounted) Navigator.pop(context);
+
+                  // Sonucu Göster
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        backgroundColor: Colors.grey[900],
+                        title: const Row(
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              color: Colors.deepPurpleAccent,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Tahmin Sonucu',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                        content: Text(
+                          'Mevcut formuna ve günün bu saatine göre tahmini tempon:\n\n'
+                          '${prediction['predicted_pace_per_km']} dk/km',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text(
+                              'Tamam',
+                              style: TextStyle(color: Color(0xFF00E676)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted)
+                    Navigator.pop(context); // Yükleniyoru kapat
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(e.toString())));
+                  }
+                }
+              },
+              child: const Text(
+                'Tahmin Al',
+                style: TextStyle(color: Colors.black),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
