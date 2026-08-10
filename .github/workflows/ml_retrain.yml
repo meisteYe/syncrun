@@ -8,13 +8,15 @@ on:
 jobs:
   retrain-model:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # GitHub Actions'ın repoya yazabilmesi için resmi izin bloğu
 
     steps:
       - name: Repoyu Klonla
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Python 3.11 Kurulumu
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -34,12 +36,10 @@ jobs:
           python train_model.py
 
       - name: Yeni Modeli Github'a Gönder
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add ml_pipeline/syncrun_pace_model.cbm
           git add ml_pipeline/syncrun_activities_ml_ready.csv
-          git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || true
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
+          git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || echo "Değişiklik yok, commit atlanıyor"
+          git push
