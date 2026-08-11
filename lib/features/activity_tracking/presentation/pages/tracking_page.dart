@@ -6,8 +6,10 @@ import '../bloc/activity_bloc.dart';
 import '../bloc/activity_event.dart';
 import '../bloc/activity_state.dart';
 import 'history_page.dart';
-import '../../../../core/network/prediction_service.dart'; // ML Servisi
-import '../../../../injection_container.dart'; // Dependency Injection
+import '../../../../core/network/prediction_service.dart';
+import '../../../../injection_container.dart';
+
+import '../../../ghost_run/ghost_runner_cubit.dart';
 
 class TrackingPage extends StatelessWidget {
   const TrackingPage({super.key});
@@ -69,25 +71,52 @@ class TrackingPage extends StatelessWidget {
                         ),
                       ],
                     ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: currentPoint,
-                          width: 20,
-                          height: 20,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.blueAccent,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
+                    BlocBuilder<GhostRunnerCubit, GhostRunnerState>(
+                      builder: (context, ghostState) {
+                        final markers = <Marker>[
+                          Marker(
+                            point: currentPoint,
+                            width: 20,
+                            height: 20,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ];
+
+                        if (ghostState.isActive &&
+                            ghostState.ghostPosition != null) {
+                          markers.add(
+                            Marker(
+                              point: ghostState.ghostPosition!,
+                              width: 20,
+                              height: 20,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.8),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white54,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return MarkerLayer(markers: markers);
+                      },
                     ),
                   ],
                 ),
-                // Mesafe Göstergesi (HUD)
                 Positioned(
                   top: 100,
                   left: 20,
@@ -132,7 +161,6 @@ class TrackingPage extends StatelessWidget {
             return Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Yapay Zeka Tahmin Butonu
                 FloatingActionButton.extended(
                   heroTag: 'ai_btn',
                   onPressed: () => _showPredictionDialog(context),
@@ -144,7 +172,6 @@ class TrackingPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 16),
-                // Klasik Başla Butonu
                 FloatingActionButton.extended(
                   heroTag: 'start_btn',
                   onPressed: () =>
@@ -161,7 +188,10 @@ class TrackingPage extends StatelessWidget {
           } else if (state is ActivityTracking) {
             return FloatingActionButton.extended(
               heroTag: 'stop_btn',
-              onPressed: () => context.read<ActivityBloc>().add(StopActivity()),
+              onPressed: () {
+                context.read<ActivityBloc>().add(StopActivity());
+                context.read<GhostRunnerCubit>().stopGhostRun();
+              },
               backgroundColor: Colors.redAccent,
               icon: const Icon(Icons.stop),
               label: const Text('Bitir'),
@@ -174,7 +204,6 @@ class TrackingPage extends StatelessWidget {
     );
   }
 
-  // Tahmin Diyaloğu Metodu
   void _showPredictionDialog(BuildContext context) {
     final TextEditingController distanceController = TextEditingController();
 
@@ -218,9 +247,8 @@ class TrackingPage extends StatelessWidget {
                 final distance = double.tryParse(distanceText);
                 if (distance == null) return;
 
-                Navigator.pop(dialogContext); // İlk diyaloğu kapat
+                Navigator.pop(dialogContext);
 
-                // Yükleniyor diyaloğu göster
                 showDialog(
                   context: context,
                   barrierDismissible: false,
@@ -230,14 +258,11 @@ class TrackingPage extends StatelessWidget {
                 );
 
                 try {
-                  // Render.com'daki API'mize istek atıyoruz
                   final prediction = await sl<PredictionService>()
                       .getPacePrediction(distance);
 
-                  // Yükleniyor diyaloğunu kapat
                   if (context.mounted) Navigator.pop(context);
 
-                  // Sonucu Göster
                   if (context.mounted) {
                     showDialog(
                       context: context,
@@ -277,8 +302,9 @@ class TrackingPage extends StatelessWidget {
                     );
                   }
                 } catch (e) {
-                  if (context.mounted)
-                    Navigator.pop(context); // Yükleniyoru kapat
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
                   if (context.mounted) {
                     ScaffoldMessenger.of(
                       context,
