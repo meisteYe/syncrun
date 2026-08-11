@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // OTO GİRİŞ İÇİN EKLENDİ
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'firebase_options.dart';
 import 'injection_container.dart' as di;
@@ -8,8 +9,9 @@ import 'injection_container.dart' as di;
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/activity_tracking/presentation/bloc/activity_bloc.dart';
 import 'features/auth/presentation/pages/login_page.dart';
-// Hayalet koşu cubit'ini import ediyoruz
 import 'features/ghost_run/ghost_runner_cubit.dart';
+// TrackingPage importunu eklememiz gerekiyor (yolunu kendi projene göre düzenleyebilirsin)
+import 'features/activity_tracking/presentation/pages/tracking_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,12 +30,10 @@ class SyncRunApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // MultiBlocProvider ile uygulamanın en üst seviyesinden Bloc'ları sağlıyoruz.
     return MultiBlocProvider(
       providers: [
         BlocProvider<AuthBloc>(create: (_) => di.sl<AuthBloc>()),
         BlocProvider<ActivityBloc>(create: (_) => di.sl<ActivityBloc>()),
-        // GhostRunnerCubit'i sisteme tanıtıyoruz
         BlocProvider<GhostRunnerCubit>(create: (_) => GhostRunnerCubit()),
       ],
       child: MaterialApp(
@@ -46,8 +46,23 @@ class SyncRunApp extends StatelessWidget {
           ),
           useMaterial3: true,
         ),
-        // Giriş ekranımızı ana sayfa yapıyoruz
-        home: const LoginPage(),
+        // OTO GİRİŞ: Oturum durumunu dinleyip ilgili sayfaya yönlendiriyoruz
+        home: StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF00E676)),
+                ),
+              );
+            }
+            if (snapshot.hasData) {
+              return const TrackingPage(); // Kullanıcı giriş yapmışsa doğrudan takip sayfasına
+            }
+            return const LoginPage(); // Giriş yapmamışsa login ekranı
+          },
+        ),
       ),
     );
   }

@@ -24,26 +24,34 @@ class ActivityRepository {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // 2. Ham GPS noktalarını (Telemetry) ML modelleri için optimize edilmiş alt koleksiyona kaydet
-    // Batch (Toplu işlem) kullanarak veritabanını yormadan tek seferde yazıyoruz.
+    // 2. Ham GPS noktalarını Hayalet Koşu mantığına uygun (lat, lng, timeOffset) şekilde kaydediyoruz
     final batch = _firestore.batch();
     final pointsRef = activityRef.collection('telemetry');
 
+    int totalSeconds = endTime.difference(startTime).inSeconds;
+
     for (int i = 0; i < routePoints.length; i++) {
       final point = routePoints[i];
-      final docRef = pointsRef.doc(); // Otomatik ID
+      final docRef = pointsRef.doc();
+
+      // Toplam geçen süreyi kaydedilen noktalara eşit olarak dağıtıp timeOffset (saniye) buluyoruz
+      int timeOffset = routePoints.length > 1
+          ? (i * (totalSeconds / (routePoints.length - 1))).round()
+          : 0;
 
       batch.set(docRef, {
-        'latitude': point.latitude,
-        'longitude': point.longitude,
-        'sequence': i, // Sıralama garantisi için
+        'lat': point
+            .latitude, // 'latitude' yerine 'lat' oldu (GhostRunner için gerekli)
+        'lng': point
+            .longitude, // 'longitude' yerine 'lng' oldu (GhostRunner için gerekli)
+        'timeOffset': timeOffset, // Hangi saniyede bu koordinattaydı?
+        'sequence': i,
       });
     }
 
     await batch.commit();
   }
 
-  /// Mevcut kullanıcının geçmiş antrenmanlarını tarihe göre azalan (en yeni en üstte) sırayla getirir.
   Future<List<Map<String, dynamic>>> getUserActivities() async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Kullanıcı oturumu bulunamadı.');
@@ -52,17 +60,12 @@ class ActivityRepository {
       final snapshot = await _firestore
           .collection('activities')
           .where('userId', isEqualTo: user.uid)
-          .orderBy(
-            'createdAt',
-            descending: true,
-          ) // En yeniler ilk sırada gelsin
+          .orderBy('createdAt', descending: true)
           .get();
 
-      // Firestore'dan gelen verileri List<Map> formatına dönüştürüyoruz
       return snapshot.docs.map((doc) {
         final data = doc.data();
-        data['id'] = doc
-            .id; // Belge ID'sini de ekleyelim, ileride detaya gitmek için lazım olacak
+        data['id'] = doc.id;
         return data;
       }).toList();
     } catch (e) {
@@ -70,19 +73,19 @@ class ActivityRepository {
     }
   }
 
-  /// Belirli bir antrenmanın ham GPS (telemetry) verilerini sırasıyla çeker.
   Future<List<LatLng>> getActivityRoute(String activityId) async {
     try {
       final snapshot = await _firestore
           .collection('activities')
           .doc(activityId)
           .collection('telemetry')
-          .orderBy('sequence') // Kaydettiğimiz sıraya göre (0, 1, 2...) getir
+          .orderBy('sequence')
           .get();
 
+      // Veritabanındaki yeni isimlendirmeye (lat, lng) göre okuma yapıyoruz
       return snapshot.docs.map((doc) {
         final data = doc.data();
-        return LatLng(data['latitude'] as double, data['longitude'] as double);
+        return LatLng(data['lat'] as double, data['lng'] as double);
       }).toList();
     } catch (e) {
       throw Exception('Rota verileri çekilirken hata oluştu: $e');

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart'; // KONUM İZİNLERİ İÇİN EKLENDİ
 import '../bloc/activity_bloc.dart';
 import '../bloc/activity_event.dart';
 import '../bloc/activity_state.dart';
@@ -172,10 +173,61 @@ class TrackingPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 16),
+                // GÜVENLİ BAŞLA BUTONU (İzin ve GPS Kontrolü Ekli)
                 FloatingActionButton.extended(
                   heroTag: 'start_btn',
-                  onPressed: () =>
-                      context.read<ActivityBloc>().add(StartActivity()),
+                  onPressed: () async {
+                    // 1. Cihazın GPS servisi açık mı?
+                    bool serviceEnabled =
+                        await Geolocator.isLocationServiceEnabled();
+                    if (!serviceEnabled) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Lütfen telefonun konumunu (GPS) açın!',
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    // 2. Uygulamaya izin verilmiş mi?
+                    LocationPermission permission =
+                        await Geolocator.checkPermission();
+                    if (permission == LocationPermission.denied) {
+                      permission = await Geolocator.requestPermission();
+                      if (permission == LocationPermission.denied) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Konum izni verilmedi.'),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                    }
+
+                    if (permission == LocationPermission.deniedForever) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Konum izinleri kalıcı olarak reddedilmiş. Ayarlardan açmalısınız.',
+                            ),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    // İzinler tamamsa antrenmanı başlat
+                    if (context.mounted) {
+                      context.read<ActivityBloc>().add(StartActivity());
+                    }
+                  },
                   backgroundColor: const Color(0xFF00E676),
                   icon: const Icon(Icons.play_arrow, color: Colors.black),
                   label: const Text(
