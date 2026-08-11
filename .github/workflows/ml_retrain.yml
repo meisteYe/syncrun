@@ -5,15 +5,18 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write # Botun yazma yetkisi (Kesin güvence)
+
 jobs:
   retrain-model:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # GitHub Actions'ın repoya yazabilmesi için resmi izin bloğu
 
     steps:
       - name: Repoyu Klonla
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Git geçmişinin tamamını çek ki çakışma yaşanmasın
 
       - name: Python 3.11 Kurulumu
         uses: actions/setup-python@v5
@@ -35,23 +38,9 @@ jobs:
           python data_pipeline.py
           python train_model.py
 
-      - name: Yeni Modeli Github'a Gönder
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-          # 1. Uzaktaki değişiklikleri al
-          git fetch origin main
-
-          # 2. Mevcut repoyu güncelle
-          git reset --hard origin/main
-
-          # 3. Dosyaları ekle
-          git add ml_pipeline/syncrun_pace_model.cbm
-          git add ml_pipeline/syncrun_activities_ml_ready.csv
-
-          # 4. Commit at (değişiklik yoksa atla)
-          git commit -m "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi" || echo "Değişiklik yok"
-
-          # 5. Token ile zorla pushla
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
+      # Manuel git komutları yerine resmi eklenti kullanıyoruz
+      - name: Değişiklikleri Commit Et ve Gönder
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🤖 [Auto] Yapay Zeka modeli yeni verilerle eğitildi"
+          file_pattern: "ml_pipeline/syncrun_pace_model.cbm ml_pipeline/syncrun_activities_ml_ready.csv"
