@@ -1,0 +1,489 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
+
+  // Firebase'deki kullanıcı belgesini güncellemek için metod
+  Future<void> _updateUserStat(String field, dynamic value) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        field: value,
+      }, SetOptions(merge: true));
+    }
+  }
+
+  // Kilo veya Yağ Oranını güncellemek için açılan pencere
+  void _showEditDialog(
+    BuildContext context,
+    String title,
+    String fieldKey,
+    String currentValue,
+  ) {
+    final controller = TextEditingController(text: currentValue);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: Text(
+            '$title Güncelle',
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Yeni değer girin',
+              hintStyle: const TextStyle(color: Colors.grey),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey[700]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF00E676)),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E676),
+              ),
+              onPressed: () {
+                final newValue = double.tryParse(
+                  controller.text.trim().replaceAll(',', '.'),
+                );
+                if (newValue != null) {
+                  _updateUserStat(fieldKey, newValue);
+                }
+                Navigator.pop(context);
+              },
+              child: const Text(
+                'Kaydet',
+                style: TextStyle(color: Colors.black),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Bu haftanın (Pzt-Pzr) toplam mesafesini hesaplayan yardımcı metod
+  double _calculateWeeklyDistance(List<QueryDocumentSnapshot> docs) {
+    final now = DateTime.now();
+    // Bu haftanın pazartesi gününün başlangıcını buluyoruz
+    final startOfWeek = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
+
+    double totalDistanceMeters = 0;
+
+    for (var doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final timestamp = data['createdAt'] as Timestamp?;
+      if (timestamp != null) {
+        final date = timestamp.toDate();
+        // Sadece bu haftaya ait koşuları topluyoruz
+        if (date.isAfter(startOfWeek) || date.isAtSameMomentAs(startOfWeek)) {
+          totalDistanceMeters += (data['totalDistance'] ?? 0.0);
+        }
+      }
+    }
+    // Metreyi kilometreye çevir
+    return totalDistanceMeters / 1000.0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    return Scaffold(
+      backgroundColor: Colors.grey[900],
+      appBar: AppBar(
+        title: const Text('Profil & Kondisyon'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .snapshots(),
+        builder: (context, userSnapshot) {
+          if (userSnapshot.hasError) {
+            return const Center(
+              child: Text(
+                'Bir hata oluştu',
+                style: TextStyle(color: Colors.white),
+              ),
+            );
+          }
+
+          final userData =
+              userSnapshot.data?.data() as Map<String, dynamic>? ?? {};
+
+          // Veritabanından gelen kullanıcı değerleri
+          final double weight = userData['weight']?.toDouble() ?? 67.5;
+          final double bodyFat = userData['bodyFat']?.toDouble() ?? 18.5;
+          final bool creatineTaken = userData['creatineTaken'] ?? false;
+          final bool zmaTaken = userData['zmaTaken'] ?? false;
+          final bool d3k2Taken = userData['d3k2Taken'] ?? false;
+          final String ghostColor =
+              userData['ghostColor'] ?? 'grey'; // Varsayılan renk gri
+
+          return StreamBuilder<QuerySnapshot>(
+            // Kullanıcının tüm aktivitelerini dinliyoruz (Haftalık hedef için)
+            stream: FirebaseFirestore.instance
+                .collection('activities')
+                .where('userId', isEqualTo: user.uid)
+                .snapshots(),
+            builder: (context, actSnapshot) {
+              double weeklyKm = 0.0;
+              if (actSnapshot.hasData) {
+                weeklyKm = _calculateWeeklyDistance(actSnapshot.data!.docs);
+              }
+
+              // Hedefimiz 5 KM (Maksimum progress 1.0 olmalı)
+              double progress = weeklyKm / 5.0;
+              if (progress > 1.0) progress = 1.0;
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Kullanıcı Bilgisi
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: const Color(0xFF00E676).withOpacity(0.2),
+                      child: const Icon(
+                        Icons.person,
+                        size: 40,
+                        color: Color(0xFF00E676),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      user.email ?? 'Kullanıcı',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Dinamik Haftalık Hedef Barı
+                    _buildSectionTitle('Haftalık Koşu Hedefi (5 km)'),
+                    Card(
+                      color: Colors.grey[850],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Bu Hafta İlerlemen',
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                Text(
+                                  '${weeklyKm.toStringAsFixed(1)} / 5.0 km',
+                                  style: const TextStyle(
+                                    color: Color(0xFF00E676),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.grey[700],
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                Color(0xFF00E676),
+                              ),
+                              minHeight: 8,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Fiziksel Durum
+                    _buildSectionTitle('Fiziksel Durum'),
+                    Card(
+                      color: Colors.grey[850],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _showEditDialog(
+                                context,
+                                'Kilo',
+                                'weight',
+                                weight.toString(),
+                              ),
+                              child: _StatColumn(
+                                label: 'Kilo',
+                                value: '${weight.toStringAsFixed(1)} kg',
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 40,
+                              color: Colors.grey[700],
+                            ),
+                            GestureDetector(
+                              onTap: () => _showEditDialog(
+                                context,
+                                'Yağ Oranı',
+                                'bodyFat',
+                                bodyFat.toString(),
+                              ),
+                              child: _StatColumn(
+                                label: 'Yağ Oranı',
+                                value: '%${bodyFat.toStringAsFixed(1)}',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Hayalet Rengi Seçimi
+                    _buildSectionTitle('Hayalet Koşucu Rengi'),
+                    Card(
+                      color: Colors.grey[850],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _ColorOption(
+                              colorValue: 'grey',
+                              displayColor: Colors.grey,
+                              selected: ghostColor == 'grey',
+                              onTap: () =>
+                                  _updateUserStat('ghostColor', 'grey'),
+                            ),
+                            _ColorOption(
+                              colorValue: 'purple',
+                              displayColor: Colors.deepPurpleAccent,
+                              selected: ghostColor == 'purple',
+                              onTap: () =>
+                                  _updateUserStat('ghostColor', 'purple'),
+                            ),
+                            _ColorOption(
+                              colorValue: 'red',
+                              displayColor: Colors.redAccent,
+                              selected: ghostColor == 'red',
+                              onTap: () => _updateUserStat('ghostColor', 'red'),
+                            ),
+                            _ColorOption(
+                              colorValue: 'yellow',
+                              displayColor: Colors.amberAccent,
+                              selected: ghostColor == 'yellow',
+                              onTap: () =>
+                                  _updateUserStat('ghostColor', 'yellow'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Günlük Takviyeler
+                    _buildSectionTitle('Günlük Takviyeler'),
+                    Card(
+                      color: Colors.grey[850],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            title: const Text(
+                              'Kreatin (3-4g)',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            value: creatineTaken,
+                            activeColor: const Color(0xFF00E676),
+                            onChanged: (val) =>
+                                _updateUserStat('creatineTaken', val),
+                          ),
+                          const Divider(color: Colors.grey, height: 1),
+                          SwitchListTile(
+                            title: const Text(
+                              'ZMA',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            value: zmaTaken,
+                            activeColor: const Color(0xFF00E676),
+                            onChanged: (val) =>
+                                _updateUserStat('zmaTaken', val),
+                          ),
+                          const Divider(color: Colors.grey, height: 1),
+                          SwitchListTile(
+                            title: const Text(
+                              'D3K2',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            value: d3k2Taken,
+                            activeColor: const Color(0xFF00E676),
+                            onChanged: (val) =>
+                                _updateUserStat('d3k2Taken', val),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        await FirebaseAuth.instance.signOut();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent.withOpacity(0.1),
+                        foregroundColor: Colors.redAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.logout),
+                      label: const Text(
+                        'Çıkış Yap',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.grey,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+// Fiziksel Durum Sütunları
+class _StatColumn extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _StatColumn({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.edit, color: Colors.grey, size: 14),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// Hayalet Rengi Seçenek Butonu
+class _ColorOption extends StatelessWidget {
+  final String colorValue;
+  final Color displayColor;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ColorOption({
+    required this.colorValue,
+    required this.displayColor,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: displayColor.withOpacity(selected ? 1.0 : 0.5),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? Colors.white : Colors.transparent,
+            width: 3,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: displayColor.withOpacity(0.6),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : [],
+        ),
+      ),
+    );
+  }
+}

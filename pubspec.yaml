@@ -45,6 +45,7 @@ dependencies:
   latlong2: ^0.10.1
   cloud_firestore: ^6.8.0
   google_maps_flutter: ^2.18.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

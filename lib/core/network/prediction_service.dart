@@ -25,6 +25,11 @@ class PredictionService {
           "day_of_week": dayOfWeek,
           "hour_of_day": hourOfDay,
         },
+        // RENDER.COM UYANMA TOLERANSI (2 DAKİKA)
+        options: Options(
+          receiveTimeout: const Duration(seconds: 20),
+          sendTimeout: const Duration(seconds: 20),
+        ),
       );
 
       return response

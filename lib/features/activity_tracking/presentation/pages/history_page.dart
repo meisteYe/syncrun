@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
-import '../../../ghost_run/ghost_runner_cubit.dart';
+import 'activity_detail_page.dart'; // DETAY SAYFASI İÇERİ AKTARILDI
 
 class HistoryPage extends StatelessWidget {
   const HistoryPage({super.key});
@@ -16,7 +15,6 @@ class HistoryPage extends StatelessWidget {
         elevation: 0,
       ),
       backgroundColor: Colors.grey[900],
-      // Firebase'den verileri çekerken senin veritabanındaki 'createdAt' alanına göre sıralıyoruz
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('activities')
@@ -56,16 +54,12 @@ class HistoryPage extends StatelessWidget {
               final doc = activities[index];
               final data = doc.data() as Map<String, dynamic>;
 
-              // 1. Mesafeyi çek (Senin DB'de totalDistance)
               final distance = data['totalDistance'] ?? 0.0;
-
-              // 2. Tarihi çek (Senin DB'de createdAt)
               final createdAt = data['createdAt'] as Timestamp?;
               final dateStr = createdAt != null
                   ? DateFormat('dd MMM yyyy - HH:mm').format(createdAt.toDate())
                   : 'Tarih Yok';
 
-              // 3. Süreyi hesapla (startTime ve endTime arasındaki farkı bularak)
               final startTimeStr = data['startTime'] as String?;
               final endTimeStr = data['endTime'] as String?;
               int durationInSeconds = 0;
@@ -75,78 +69,67 @@ class HistoryPage extends StatelessWidget {
                   final start = DateTime.parse(startTimeStr);
                   final end = DateTime.parse(endTimeStr);
                   durationInSeconds = end.difference(start).inSeconds;
-                } catch (e) {
-                  // Tarih formatı hatalıysa sıfır kalır
-                }
+                } catch (_) {}
               }
 
-              return Card(
-                color: Colors.grey[850],
-                margin: const EdgeInsets.only(bottom: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            dateStr,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const Icon(
-                            Icons.directions_run,
-                            color: Color(0xFF00E676),
-                          ),
-                        ],
+              // KARTA TIKLANABİLİRLİK (GestureDetector) EKLENDİ
+              return GestureDetector(
+                onTap: () {
+                  // Detay sayfasına ID'yi ve verileri yolluyoruz
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ActivityDetailPage(
+                        activityId: doc.id,
+                        summaryData: data, // Tüm veriyi de aktarıyoruz
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildStatColumn(
-                            'Mesafe',
-                            '${distance.toStringAsFixed(1)} m',
-                          ),
-                          _buildStatColumn(
-                            'Süre',
-                            '${(durationInSeconds / 60).toStringAsFixed(1)} dk',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // 👻 HAYALET YARIŞ BUTONU
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.deepPurpleAccent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                    ),
+                  );
+                },
+                child: Card(
+                  color: Colors.grey[850],
+                  margin: const EdgeInsets.only(bottom: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              dateStr,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
                             ),
-                          ),
-                          icon: const Icon(
-                            Icons.sports_score,
-                            color: Colors.white,
-                          ),
-                          label: const Text(
-                            'Bu Koşuyla Yarış',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
+                            const Icon(
+                              Icons.arrow_forward_ios,
+                              color: Colors.grey,
+                              size: 16,
                             ),
-                          ),
-                          onPressed: () => _loadGhostRun(context, doc.id),
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildStatColumn(
+                              'Mesafe',
+                              '${distance.toStringAsFixed(1)} m',
+                            ),
+                            _buildStatColumn(
+                              'Süre',
+                              '${(durationInSeconds / 60).toStringAsFixed(1)} dk',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -173,64 +156,5 @@ class HistoryPage extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  // Firebase'den seçilen koşunun telemetri verilerini çekip Cubit'e aktaran metod
-  Future<void> _loadGhostRun(BuildContext context, String activityId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Colors.deepPurpleAccent),
-      ),
-    );
-
-    try {
-      final telemetrySnapshot = await FirebaseFirestore.instance
-          .collection('activities')
-          .doc(activityId)
-          .collection('telemetry')
-          .orderBy('timeOffset') // Telemetry içindeki saniye sıralaması
-          .get();
-
-      if (context.mounted) Navigator.pop(context);
-
-      if (telemetrySnapshot.docs.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Bu koşunun GPS verisi bulunamadı!')),
-          );
-        }
-        return;
-      }
-
-      final ghostPath = telemetrySnapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'lat': data['lat'],
-          'lng': data['lng'],
-          'timeOffset': data['timeOffset'],
-        };
-      }).toList();
-
-      if (context.mounted) {
-        context.read<GhostRunnerCubit>().startGhostRun(ghostPath);
-        Navigator.pop(context); // Geçmiş sayfasını kapatıp haritaya dönüyoruz
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Hayalet rotası yüklendi! Haritada görebilirsin.'),
-            backgroundColor: Colors.deepPurpleAccent,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) Navigator.pop(context);
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Hata: $e')));
-      }
-    }
   }
 }

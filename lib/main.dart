@@ -10,8 +10,8 @@ import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/activity_tracking/presentation/bloc/activity_bloc.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/ghost_run/ghost_runner_cubit.dart';
-// TrackingPage importunu eklememiz gerekiyor (yolunu kendi projene göre düzenleyebilirsin)
-import 'features/activity_tracking/presentation/pages/tracking_page.dart';
+// ARTIK TRACKING PAGE DEĞİL, MAIN PAGE'İ İÇERİ AKTARIYORUZ
+import 'features/activity_tracking/presentation/pages/main_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,7 +58,7 @@ class SyncRunApp extends StatelessWidget {
               );
             }
             if (snapshot.hasData) {
-              return const TrackingPage(); // Kullanıcı giriş yapmışsa doğrudan takip sayfasına
+              return const MainPage(); // ARTIK ALT MENÜLÜ ANA SAYFAYA GİDİYOR
             }
             return const LoginPage(); // Giriş yapmamışsa login ekranı
           },
