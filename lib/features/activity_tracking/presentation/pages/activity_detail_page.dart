@@ -6,7 +6,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:ui';
 import '../../../../injection_container.dart';
 import '../../data/repositories/activity_repository.dart';
-import '../../../ghost_run/ghost_runner_cubit.dart'; // HAYALET İÇİN EKLENDİ
+import '../../../ghost_run/ghost_runner_cubit.dart';
+import 'main_page.dart'; // YENİ EKLENDİ: Global kumandaya erişmek için
 
 class ActivityDetailPage extends StatelessWidget {
   final String activityId;
@@ -18,7 +19,6 @@ class ActivityDetailPage extends StatelessWidget {
     required this.summaryData,
   });
 
-  // HAYALET KOŞU YÜKLEME FONKSİYONU
   Future<void> _loadGhostRun(BuildContext context, String activityId) async {
     showDialog(
       context: context,
@@ -36,7 +36,7 @@ class ActivityDetailPage extends StatelessWidget {
           .orderBy('timeOffset')
           .get();
 
-      if (context.mounted) Navigator.pop(context); // Yükleme diyaloğunu kapat
+      if (context.mounted) Navigator.pop(context);
 
       if (telemetrySnapshot.docs.isEmpty) {
         if (context.mounted) {
@@ -58,12 +58,16 @@ class ActivityDetailPage extends StatelessWidget {
 
       if (context.mounted) {
         context.read<GhostRunnerCubit>().startGhostRun(ghostPath);
-        // Hem detay sayfasını hem de geçmiş sayfasını kapatıp Ana Haritaya (MainPage) döner
+
+        // YENİ DÜZELTME: ALT MENÜYÜ HARİTAYA (INDEX 1) ZORLA!
+        globalPageIndex.value = 1;
+
+        // Tüm pencereleri kapatıp ana haritaya dön
         Navigator.of(context).popUntil((route) => route.isFirst);
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Hayalet rotası yüklendi! Haritada görebilirsin.'),
+            content: Text('Hayalet rotası yüklendi! Yarış başlıyor...'),
             backgroundColor: Colors.deepPurpleAccent,
           ),
         );
@@ -93,7 +97,6 @@ class ActivityDetailPage extends StatelessWidget {
       } catch (_) {}
     }
 
-    // Tempo (Pace) Hesaplama
     String paceStr = "--:--";
     if (distance > 15 && durationInSeconds > 0) {
       double distanceKm = distance / 1000.0;
@@ -164,7 +167,7 @@ class ActivityDetailPage extends StatelessWidget {
                 children: [
                   TileLayer(
                     urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', // Google Maps
                     userAgentPackageName: 'com.syncrun.app',
                   ),
                   PolylineLayer(
@@ -172,8 +175,7 @@ class ActivityDetailPage extends StatelessWidget {
                       Polyline(
                         points: routePoints,
                         strokeWidth: 5.0,
-                        color:
-                            Colors.redAccent, // Geçmiş rotalar kırmızı çizilir
+                        color: Colors.redAccent,
                       ),
                     ],
                   ),
@@ -208,7 +210,6 @@ class ActivityDetailPage extends StatelessWidget {
                 ],
               ),
 
-              // HUD ve HAYALET BUTONU
               Positioned(
                 bottom: 24,
                 left: 16,
@@ -216,7 +217,6 @@ class ActivityDetailPage extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // BİLGİ KARTI (Cam Efektli)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(20),
                       child: BackdropFilter(
@@ -260,7 +260,6 @@ class ActivityDetailPage extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    // HAYALETLE YARIŞ BUTONU
                     SizedBox(
                       width: double.infinity,
                       height: 56,

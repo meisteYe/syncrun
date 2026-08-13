@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'home_page.dart';
 import 'tracking_page.dart';
 import 'history_page.dart';
-import '../../../../features/profile/presentation/pages/profile_page.dart'; // Profil sayfasının yolu
+import '../../../../features/profile/presentation/pages/profile_page.dart';
+import '../../../ghost_run/ghost_runner_cubit.dart';
+
+final ValueNotifier<int> globalPageIndex = ValueNotifier<int>(0);
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -11,29 +16,51 @@ class MainPage extends StatefulWidget {
 }
 
 class _MainPageState extends State<MainPage> {
-  int _currentIndex = 0;
+  late final List<Widget> _pages;
 
-  final List<Widget> _pages = [
-    const TrackingPage(),
-    const HistoryPage(),
-    const ProfilePage(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      HomePage(onStartRunTap: () => globalPageIndex.value = 1),
+      const TrackingPage(),
+      const HistoryPage(),
+      const ProfilePage(),
+    ];
+
+    globalPageIndex.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _pages[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        backgroundColor: Colors.black, // Mat Siyah
-        selectedItemColor: const Color(0xFF00E676), // Mat Yeşil
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Harita'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Geçmiş'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
-        ],
+    // BLOCLISTENER İLE HAYALETİ TAKİP ET
+    return BlocListener<GhostRunnerCubit, GhostRunnerState>(
+      listenWhen: (previous, current) => !previous.isActive && current.isActive,
+      listener: (context, state) {
+        // Hayalet yüklendiği an:
+        globalPageIndex.value = 1; // Haritaya geç
+      },
+      child: Scaffold(
+        body: IndexedStack(index: globalPageIndex.value, children: _pages),
+        bottomNavigationBar: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: globalPageIndex.value,
+          onTap: (index) => globalPageIndex.value = index,
+          backgroundColor: Colors.black,
+          selectedItemColor: const Color(0xFF00E676),
+          unselectedItemColor: Colors.grey,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_filled),
+              label: 'Ana Sayfa',
+            ),
+            BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Harita'),
+            BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Geçmiş'),
+            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
+          ],
+        ),
       ),
     );
   }

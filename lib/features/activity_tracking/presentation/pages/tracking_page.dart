@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import '../bloc/activity_bloc.dart';
 import '../bloc/activity_event.dart';
 import '../bloc/activity_state.dart';
@@ -18,31 +19,35 @@ import '../../../ghost_run/ghost_runner_cubit.dart';
 class TrackingPage extends StatelessWidget {
   const TrackingPage({super.key});
 
-  // ---------------------------------------------------------
-  // YENİ WIDGET: 3-2-1 GERİ SAYIM ANİMASYONU
-  // ---------------------------------------------------------
   void _startCountdown(BuildContext parentContext) {
     int countdown = 3;
     Timer? timer;
+    bool gpsStarted = false;
 
     showDialog(
       context: parentContext,
       barrierDismissible: false,
-      barrierColor: Colors.black.withOpacity(0.9), // Koyu mat arka plan
+      barrierColor: Colors.black.withOpacity(0.9),
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setState) {
-            // Timer'ı sadece bir kez başlat
             timer ??= Timer.periodic(const Duration(seconds: 1), (t) {
               if (countdown > 1) {
                 setState(() => countdown--);
-              } else if (countdown == 1) {
-                setState(() => countdown = 0); // 0 olduğunda "BAŞLA!" yazacak
               } else {
                 t.cancel();
-                Navigator.pop(dialogContext); // Animasyonu kapat
-                // GERÇEK GPS TAKİBİNİ BAŞLAT
-                parentContext.read<ActivityBloc>().add(StartActivity());
+                setState(() => countdown = 0);
+
+                if (!gpsStarted) {
+                  parentContext.read<ActivityBloc>().add(StartActivity());
+                  gpsStarted = true;
+                }
+
+                Future.delayed(const Duration(milliseconds: 400), () {
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                });
               }
             });
 
@@ -52,7 +57,7 @@ class TrackingPage extends StatelessWidget {
                 child: TweenAnimationBuilder<double>(
                   key: ValueKey(countdown),
                   tween: Tween<double>(begin: 0.5, end: 1.0),
-                  duration: const Duration(milliseconds: 500),
+                  duration: const Duration(milliseconds: 400),
                   curve: Curves.elasticOut,
                   builder: (context, scale, child) {
                     return Transform.scale(
@@ -80,7 +85,7 @@ class TrackingPage extends StatelessWidget {
           },
         );
       },
-    ).then((_) => timer?.cancel()); // Her ihtimale karşı timer'ı temizle
+    ).then((_) => timer?.cancel());
   }
 
   @override
@@ -89,7 +94,7 @@ class TrackingPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SyncRun Takip'),
+        title: const Text('SyncRun Fit'),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -106,168 +111,230 @@ class TrackingPage extends StatelessWidget {
         ],
       ),
       extendBodyBehindAppBar: true,
-      body: BlocBuilder<ActivityBloc, ActivityState>(
-        builder: (context, state) {
-          if (state is ActivityInitial) {
-            return const Center(
-              child: Text(
-                "Başlamak için 'Başla' butonuna basın.",
-                style: TextStyle(fontSize: 16),
-              ),
-            );
+
+      // YENİ: GHOST RUNNER DİNLEYİCİSİ (Geçmişten gelindiğinde otomatik tetikler)
+      body: BlocListener<GhostRunnerCubit, GhostRunnerState>(
+        listenWhen: (previous, current) =>
+            !previous.isActive && current.isActive,
+        listener: (context, state) {
+          final activityState = context.read<ActivityBloc>().state;
+          if (activityState is ActivityInitial ||
+              activityState is ActivityCompleted) {
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (context.mounted) {
+                _startCountdown(context);
+              }
+            });
           }
-
-          if (state is ActivityTracking) {
-            final currentPoint = state.routePoints.last;
-
-            return Stack(
-              children: [
-                FlutterMap(
-                  options: MapOptions(
-                    initialCenter: currentPoint,
-                    initialZoom: 17.5,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                    ),
-                  ),
+        },
+        child: BlocBuilder<ActivityBloc, ActivityState>(
+          builder: (context, state) {
+            if (state is ActivityInitial) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.syncrun.app',
+                    Icon(
+                      Icons.satellite_alt,
+                      size: 48,
+                      color: Colors.grey[700],
                     ),
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: state.routePoints,
-                          strokeWidth: 6.0,
-                          color: const Color(0xFF00E676),
-                        ),
-                      ],
+                    const SizedBox(height: 16),
+                    Text(
+                      "GPS Bağlantısı Bekleniyor...\nBaşlamak için 'Başla' butonuna basın.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.grey[500]),
                     ),
-                    StreamBuilder<DocumentSnapshot>(
-                      stream: user != null
-                          ? FirebaseFirestore.instance
-                                .collection('users')
-                                .doc(user.uid)
-                                .snapshots()
-                          : const Stream.empty(),
-                      builder: (context, snapshot) {
-                        String colorStr = 'grey';
-                        if (snapshot.hasData && snapshot.data!.data() != null) {
-                          final data =
-                              snapshot.data!.data() as Map<String, dynamic>;
-                          colorStr = data['ghostColor'] ?? 'grey';
-                        }
+                  ],
+                ),
+              );
+            }
 
-                        Color ghostColor;
-                        switch (colorStr) {
-                          case 'purple':
-                            ghostColor = Colors.deepPurpleAccent;
-                            break;
-                          case 'red':
-                            ghostColor = Colors.redAccent;
-                            break;
-                          case 'yellow':
-                            ghostColor = Colors.amberAccent;
-                            break;
-                          case 'grey':
-                          default:
-                            ghostColor = Colors.grey;
-                            break;
-                        }
+            if (state is ActivityTracking || state is ActivityPaused) {
+              List<LatLng> currentRoute = [];
+              double currentDist = 0.0;
+              bool isPaused = state is ActivityPaused;
 
-                        return BlocBuilder<GhostRunnerCubit, GhostRunnerState>(
-                          builder: (context, ghostState) {
-                            final markers = <Marker>[
-                              Marker(
-                                point: currentPoint,
-                                width: 22,
-                                height: 22,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.blueAccent,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 3,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.blueAccent.withOpacity(
-                                          0.5,
-                                        ),
-                                        blurRadius: 10,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ];
+              if (state is ActivityTracking) {
+                currentRoute = state.routePoints;
+                currentDist = state.currentDistance;
+              } else if (state is ActivityPaused) {
+                currentRoute = state.routePoints;
+                currentDist = state.currentDistance;
+              }
 
-                            if (ghostState.isActive &&
-                                ghostState.ghostPosition != null) {
-                              markers.add(
+              final currentPoint = currentRoute.last;
+
+              return Stack(
+                children: [
+                  FlutterMap(
+                    options: MapOptions(
+                      initialCenter: currentPoint,
+                      initialZoom: 17.5,
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                      ),
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                        userAgentPackageName: 'com.syncrun.app',
+                      ),
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: currentRoute,
+                            strokeWidth: 6.0,
+                            color: const Color(0xFF00E676),
+                          ),
+                        ],
+                      ),
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: user != null
+                            ? FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(user.uid)
+                                  .snapshots()
+                            : const Stream.empty(),
+                        builder: (context, snapshot) {
+                          String colorStr = 'grey';
+                          if (snapshot.hasData &&
+                              snapshot.data!.data() != null) {
+                            final data =
+                                snapshot.data!.data() as Map<String, dynamic>;
+                            colorStr = data['ghostColor'] ?? 'grey';
+                          }
+
+                          Color ghostColor;
+                          switch (colorStr) {
+                            case 'purple':
+                              ghostColor = Colors.deepPurpleAccent;
+                              break;
+                            case 'red':
+                              ghostColor = Colors.redAccent;
+                              break;
+                            case 'yellow':
+                              ghostColor = Colors.amberAccent;
+                              break;
+                            case 'grey':
+                            default:
+                              ghostColor = Colors.grey;
+                              break;
+                          }
+
+                          return BlocBuilder<
+                            GhostRunnerCubit,
+                            GhostRunnerState
+                          >(
+                            builder: (context, ghostState) {
+                              final markers = <Marker>[
                                 Marker(
-                                  point: ghostState.ghostPosition!,
+                                  point: currentPoint,
                                   width: 22,
                                   height: 22,
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: ghostColor.withOpacity(0.85),
+                                      color: Colors.blueAccent,
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: Colors.white70,
-                                        width: 2,
+                                        color: Colors.white,
+                                        width: 3,
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: ghostColor.withOpacity(0.5),
+                                          color: Colors.blueAccent.withOpacity(
+                                            0.5,
+                                          ),
                                           blurRadius: 10,
                                         ),
                                       ],
                                     ),
                                   ),
                                 ),
-                              );
-                            }
+                              ];
 
-                            return MarkerLayer(markers: markers);
-                          },
+                              if (ghostState.isActive &&
+                                  ghostState.ghostPosition != null) {
+                                markers.add(
+                                  Marker(
+                                    point: ghostState.ghostPosition!,
+                                    width: 22,
+                                    height: 22,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: ghostColor.withOpacity(0.85),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white70,
+                                          width: 2,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: ghostColor.withOpacity(0.5),
+                                            blurRadius: 10,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return MarkerLayer(markers: markers);
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+
+                  if (isPaused)
+                    Container(
+                      color: Colors.black.withOpacity(0.3),
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
+
+                  Positioned(
+                    top: 100,
+                    left: 16,
+                    right: 16,
+                    child: BlocBuilder<GhostRunnerCubit, GhostRunnerState>(
+                      builder: (context, ghostState) {
+                        return LiveRunHUD(
+                          distanceMeters: currentDist,
+                          isTracking: true,
+                          isPaused: isPaused,
+                          userPosition: currentPoint,
+                          ghostPosition: ghostState.isActive
+                              ? ghostState.ghostPosition
+                              : null,
                         );
                       },
                     ),
-                  ],
-                ),
-                Positioned(
-                  top: 100,
-                  left: 16,
-                  right: 16,
-                  child: LiveRunHUD(
-                    distanceMeters: state.currentDistance,
-                    isTracking: true,
+                  ),
+                ],
+              );
+            }
+
+            if (state is ActivityCompleted) {
+              return Center(
+                child: Text(
+                  'Antrenman Bitti!\nToplam: ${(state.totalDistance / 1000).toStringAsFixed(2)} km',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ],
-            );
-          }
+              );
+            }
 
-          if (state is ActivityCompleted) {
-            return Center(
-              child: Text(
-                'Antrenman Bitti!\nToplam: ${(state.totalDistance / 1000).toStringAsFixed(2)} km',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          }
-
-          return const SizedBox.shrink();
-        },
+            return const SizedBox.shrink();
+          },
+        ),
       ),
+
       floatingActionButton: BlocBuilder<ActivityBloc, ActivityState>(
         builder: (context, state) {
           if (state is ActivityInitial || state is ActivityCompleted) {
@@ -294,15 +361,10 @@ class TrackingPage extends StatelessWidget {
                     bool serviceEnabled =
                         await Geolocator.isLocationServiceEnabled();
                     if (!serviceEnabled) {
-                      if (context.mounted) {
+                      if (context.mounted)
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Lütfen telefonun konumunu (GPS) açın!',
-                            ),
-                          ),
+                          const SnackBar(content: Text('GPS Kapalı!')),
                         );
-                      }
                       return;
                     }
 
@@ -310,35 +372,10 @@ class TrackingPage extends StatelessWidget {
                         await Geolocator.checkPermission();
                     if (permission == LocationPermission.denied) {
                       permission = await Geolocator.requestPermission();
-                      if (permission == LocationPermission.denied) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Konum izni verilmedi.'),
-                            ),
-                          );
-                        }
-                        return;
-                      }
+                      if (permission == LocationPermission.denied) return;
                     }
 
-                    if (permission == LocationPermission.deniedForever) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Konum izinleri kalıcı olarak reddedilmiş. Ayarlardan açmalısınız.',
-                            ),
-                          ),
-                        );
-                      }
-                      return;
-                    }
-
-                    // İZİNLER TAMAMSA DİREKT BAŞLAMAK YERİNE GERİ SAYIMI TETİKLE
-                    if (context.mounted) {
-                      _startCountdown(context);
-                    }
+                    if (context.mounted) _startCountdown(context);
                   },
                   backgroundColor: const Color(0xFF00E676),
                   icon: const Icon(Icons.play_arrow, color: Colors.black),
@@ -354,24 +391,85 @@ class TrackingPage extends StatelessWidget {
               ],
             );
           } else if (state is ActivityTracking) {
-            return FloatingActionButton.extended(
-              heroTag: 'stop_btn',
-              onPressed: () {
-                context.read<ActivityBloc>().add(StopActivity());
-                context.read<GhostRunnerCubit>().stopGhostRun();
-              },
-              backgroundColor: Colors.redAccent,
-              icon: const Icon(Icons.stop, color: Colors.white),
-              label: const Text(
-                'Bitir',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'pause_btn',
+                  onPressed: () =>
+                      context.read<ActivityBloc>().add(PauseActivity()),
+                  backgroundColor: Colors.amberAccent,
+                  icon: const Icon(Icons.pause, color: Colors.black),
+                  label: const Text(
+                    'Durdur',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 16),
+                FloatingActionButton.extended(
+                  heroTag: 'stop_btn',
+                  onPressed: () {
+                    context.read<ActivityBloc>().add(StopActivity());
+                    context.read<GhostRunnerCubit>().stopGhostRun();
+                  },
+                  backgroundColor: Colors.redAccent,
+                  icon: const Icon(Icons.stop, color: Colors.white),
+                  label: const Text(
+                    'Bitir',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          } else if (state is ActivityPaused) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'resume_btn',
+                  onPressed: () =>
+                      context.read<ActivityBloc>().add(ResumeActivity()),
+                  backgroundColor: const Color(0xFF00E676),
+                  icon: const Icon(Icons.play_arrow, color: Colors.black),
+                  label: const Text(
+                    'Devam Et',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                FloatingActionButton.extended(
+                  heroTag: 'stop_btn',
+                  onPressed: () {
+                    context.read<ActivityBloc>().add(StopActivity());
+                    context.read<GhostRunnerCubit>().stopGhostRun();
+                  },
+                  backgroundColor: Colors.redAccent,
+                  icon: const Icon(Icons.stop, color: Colors.white),
+                  label: const Text(
+                    'Bitir',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
             );
           }
+
           return const SizedBox.shrink();
         },
       ),
@@ -420,7 +518,6 @@ class TrackingPage extends StatelessWidget {
                 if (distanceText.isEmpty) return;
                 final distance = double.tryParse(distanceText);
                 if (distance == null) return;
-
                 Navigator.pop(dialogContext);
 
                 showDialog(
@@ -506,11 +603,10 @@ class TrackingPage extends StatelessWidget {
                   }
                 } catch (e) {
                   if (context.mounted) Navigator.pop(context);
-                  if (context.mounted) {
+                  if (context.mounted)
                     ScaffoldMessenger.of(
                       context,
                     ).showSnackBar(SnackBar(content: Text(e.toString())));
-                  }
                 }
               },
               child: const Text(
@@ -525,14 +621,23 @@ class TrackingPage extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------
+// HUD VE SESLİ KOÇ (VOICE ASSISTANT) ENTEGRASYONU
+// ---------------------------------------------------------
 class LiveRunHUD extends StatefulWidget {
   final double distanceMeters;
   final bool isTracking;
+  final bool isPaused;
+  final LatLng? userPosition;
+  final LatLng? ghostPosition;
 
   const LiveRunHUD({
     super.key,
     required this.distanceMeters,
     required this.isTracking,
+    this.isPaused = false,
+    this.userPosition,
+    this.ghostPosition,
   });
 
   @override
@@ -543,20 +648,91 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
   Timer? _timer;
   int _elapsedSeconds = 0;
 
+  final FlutterTts _flutterTts = FlutterTts();
+  int _lastSpokenKm = 0;
+
   @override
   void initState() {
     super.initState();
-    if (widget.isTracking) _startTimer();
+    if (widget.isTracking && !widget.isPaused) {
+      _startTimer();
+    }
+    _setupVoiceAndSpeak();
+  }
+
+  Future<void> _setupVoiceAndSpeak() async {
+    try {
+      await _flutterTts.setLanguage("tr-TR");
+      await _flutterTts.setSpeechRate(0.55);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.1);
+      await _flutterTts.awaitSpeakCompletion(true);
+
+      if (widget.isTracking && mounted && !widget.isPaused) {
+        var result = await _flutterTts.speak(
+          "Antrenman başladı. Başarılar Emir!",
+        );
+        if (result == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ses motoru tetiklendi ama ses veremedi.'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('TTS Hatası: $e')));
+    }
   }
 
   @override
   void didUpdateWidget(LiveRunHUD oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isTracking && !oldWidget.isTracking) {
+
+    if (widget.isPaused && !oldWidget.isPaused) {
+      _timer?.cancel();
+    } else if (!widget.isPaused && oldWidget.isPaused) {
+      _startTimer();
+    } else if (widget.isTracking && !oldWidget.isTracking) {
       _startTimer();
     } else if (!widget.isTracking && oldWidget.isTracking) {
       _timer?.cancel();
     }
+
+    if (widget.isTracking && !widget.isPaused) {
+      int currentKm = (widget.distanceMeters / 1000).floor();
+      if (currentKm > _lastSpokenKm && currentKm > 0) {
+        _lastSpokenKm = currentKm;
+        _speakMilestone(currentKm);
+      }
+    }
+  }
+
+  Future<void> _speakMilestone(int km) async {
+    double distanceKm = widget.distanceMeters / 1000.0;
+    double minutes = _elapsedSeconds / 60.0;
+    double pace = minutes / distanceKm;
+
+    int paceMins = pace.floor();
+    int paceSecs = ((pace - paceMins) * 60).round();
+
+    String text =
+        "Harika gidiyorsun. $km. kilometreyi tamamladın. Ortalama tempon $paceMins dakika, $paceSecs saniye.";
+
+    if (widget.ghostPosition != null && widget.userPosition != null) {
+      final gap = const Distance().as(
+        LengthUnit.Meter,
+        widget.userPosition!,
+        widget.ghostPosition!,
+      );
+      text +=
+          " Hayaletle arandaki fark yaklaşık ${gap.toInt()} metre. Tempoyu koru!";
+    }
+
+    await _flutterTts.speak(text);
   }
 
   void _startTimer() {
@@ -570,6 +746,7 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
   @override
   void dispose() {
     _timer?.cancel();
+    _flutterTts.stop();
     super.dispose();
   }
 
@@ -577,9 +754,8 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
     int h = seconds ~/ 3600;
     int m = (seconds % 3600) ~/ 60;
     int s = seconds % 60;
-    if (h > 0) {
+    if (h > 0)
       return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
-    }
     return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
   }
 
@@ -607,7 +783,9 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.35),
+            color: widget.isPaused
+                ? Colors.amber.withOpacity(0.2)
+                : Colors.black.withOpacity(0.35),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withOpacity(0.15), width: 1),
           ),
@@ -616,17 +794,17 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
             children: [
               Text(
                 _formatTime(_elapsedSeconds),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 48,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  color: widget.isPaused ? Colors.amberAccent : Colors.white,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
-              const Text(
-                'SÜRE',
+              Text(
+                widget.isPaused ? 'DURAKLATILDI' : 'SÜRE',
                 style: TextStyle(
-                  color: Colors.black,
+                  color: widget.isPaused ? Colors.amberAccent : Colors.black,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.5,
@@ -685,6 +863,48 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
                   ),
                 ],
               ),
+
+              if (widget.ghostPosition != null &&
+                  widget.userPosition != null) ...[
+                const SizedBox(height: 16),
+                Builder(
+                  builder: (context) {
+                    final gap = const Distance().as(
+                      LengthUnit.Meter,
+                      widget.userPosition!,
+                      widget.ghostPosition!,
+                    );
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurpleAccent.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.deepPurpleAccent.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('👻', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Aralarındaki Fark: ${gap.toInt()} Metre',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
             ],
           ),
         ),
