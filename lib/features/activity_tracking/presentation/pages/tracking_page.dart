@@ -16,6 +16,9 @@ import '../../../../injection_container.dart';
 import 'dart:ui';
 import '../../../ghost_run/ghost_runner_cubit.dart';
 
+// YENİ: SANAL TAVŞANIN HIZINI (Saniye cinsinden) TUTAN KONTROLCÜ
+final ValueNotifier<int?> pacerTargetNotifier = ValueNotifier<int?>(null);
+
 class TrackingPage extends StatelessWidget {
   const TrackingPage({super.key});
 
@@ -88,6 +91,316 @@ class TrackingPage extends StatelessWidget {
     ).then((_) => timer?.cancel());
   }
 
+  // YENİ: SANAL TAVŞAN KURMA MENÜSÜ
+  void _showPacerDialog(BuildContext context) {
+    final TextEditingController minsController = TextEditingController();
+    final TextEditingController secsController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Row(
+          children: [
+            Icon(Icons.pets, color: Colors.orangeAccent),
+            SizedBox(width: 8),
+            Text(
+              'Sanal Tavşan',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Hedef temponuzu girin. Tavşan bu hızda sabit koşacaktır.',
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: minsController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: '05',
+                      hintStyle: TextStyle(color: Colors.grey[700]),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.orangeAccent),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: Colors.orangeAccent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text(
+                    ':',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: secsController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: '30',
+                      hintStyle: TextStyle(color: Colors.grey[700]),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.orangeAccent),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: Colors.orangeAccent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orangeAccent,
+            ),
+            onPressed: () {
+              int m = int.tryParse(minsController.text) ?? 0;
+              int s = int.tryParse(secsController.text) ?? 0;
+              if (m > 0 || s > 0) {
+                pacerTargetNotifier.value = (m * 60) + s;
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Sanal Tavşan $m:${s.toString().padLeft(2, '0')} dk/km hızına kuruldu!',
+                    ),
+                    backgroundColor: Colors.orangeAccent,
+                  ),
+                );
+              }
+            },
+            child: const Text(
+              'Kur',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPredictionDialog(BuildContext context) {
+    final TextEditingController distanceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text(
+            'Hedef Mesafeni Gir (Metre)',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: distanceController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Örn: 5000 (5km için)',
+              hintStyle: const TextStyle(color: Colors.grey),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey[700]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF00E676)),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E676),
+              ),
+              onPressed: () async {
+                final distanceText = distanceController.text.trim();
+                if (distanceText.isEmpty) return;
+                final distance = double.tryParse(distanceText);
+                if (distance == null) return;
+                Navigator.pop(dialogContext);
+
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => AlertDialog(
+                    backgroundColor: Colors.grey[900],
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 16),
+                        const CircularProgressIndicator(
+                          color: Color(0xFF00E676),
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Yapay Zeka Motoru Isıtılıyor...',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Sunucu uyku modundan çıkarılıyor.\nBu işlem ilk seferde 1-2 dakika sürebilir, lütfen bekleyin.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                );
+
+                try {
+                  final prediction = await sl<PredictionService>()
+                      .getPacePrediction(distance);
+                  if (context.mounted) Navigator.pop(context);
+
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        backgroundColor: Colors.grey[900],
+                        title: const Row(
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              color: Colors.deepPurpleAccent,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Tahmin Sonucu',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                        content: Text(
+                          'Mevcut formuna ve günün bu saatine göre tahmini tempon:\n\n${prediction['predicted_pace_per_km']} dk/km',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text(
+                              'Kapat',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                          // YENİ: YAPAY ZEKA SONUCUNU DİREKT TAVŞANA BAĞLAMA BUTONU
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orangeAccent,
+                            ),
+                            onPressed: () {
+                              final parts = prediction['predicted_pace_per_km']
+                                  .toString()
+                                  .split(':');
+                              if (parts.length == 2) {
+                                int m = int.tryParse(parts[0]) ?? 0;
+                                int s = int.tryParse(parts[1]) ?? 0;
+                                pacerTargetNotifier.value = (m * 60) + s;
+                              }
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Yapay Zeka tempolu Sanal Tavşan kuruldu!',
+                                  ),
+                                  backgroundColor: Colors.orangeAccent,
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'Bunu Tavşan Yap',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) Navigator.pop(context);
+                  if (context.mounted)
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(e.toString())));
+                }
+              },
+              child: const Text(
+                'Tahmin Al',
+                style: TextStyle(color: Colors.black),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -112,18 +425,31 @@ class TrackingPage extends StatelessWidget {
       ),
       extendBodyBehindAppBar: true,
 
-      // YENİ: GHOST RUNNER DİNLEYİCİSİ (Geçmişten gelindiğinde otomatik tetikler)
       body: BlocListener<GhostRunnerCubit, GhostRunnerState>(
         listenWhen: (previous, current) =>
             !previous.isActive && current.isActive,
         listener: (context, state) {
           final activityState = context.read<ActivityBloc>().state;
-          if (activityState is ActivityInitial ||
-              activityState is ActivityCompleted) {
-            Future.delayed(const Duration(milliseconds: 300), () {
-              if (context.mounted) {
-                _startCountdown(context);
+          if (activityState is ActivityInitial) {
+            Future.delayed(const Duration(milliseconds: 500), () async {
+              if (!context.mounted) return;
+              bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+              if (!serviceEnabled) {
+                if (context.mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('GPS Kapalı! Otomatik başlatılamadı.'),
+                    ),
+                  );
+                return;
               }
+              LocationPermission permission =
+                  await Geolocator.checkPermission();
+              if (permission == LocationPermission.denied) {
+                permission = await Geolocator.requestPermission();
+                if (permission == LocationPermission.denied) return;
+              }
+              if (context.mounted) _startCountdown(context);
             });
           }
         },
@@ -338,57 +664,102 @@ class TrackingPage extends StatelessWidget {
       floatingActionButton: BlocBuilder<ActivityBloc, ActivityState>(
         builder: (context, state) {
           if (state is ActivityInitial || state is ActivityCompleted) {
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FloatingActionButton.extended(
-                  heroTag: 'ai_btn',
-                  onPressed: () => _showPredictionDialog(context),
-                  backgroundColor: Colors.grey[850],
-                  icon: const Icon(
-                    Icons.auto_awesome,
-                    color: Colors.deepPurpleAccent,
-                  ),
-                  label: const Text(
-                    'Akıllı Tahmin',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                FloatingActionButton.extended(
-                  heroTag: 'start_btn',
-                  onPressed: () async {
-                    bool serviceEnabled =
-                        await Geolocator.isLocationServiceEnabled();
-                    if (!serviceEnabled) {
-                      if (context.mounted)
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('GPS Kapalı!')),
-                        );
-                      return;
-                    }
+            return ValueListenableBuilder<int?>(
+              valueListenable: pacerTargetNotifier,
+              builder: (context, targetSecs, child) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // TAVŞAN KURULU İSE ÜSTTE BİLGİ VER
+                    if (targetSecs != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orangeAccent.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.5),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          '🐇 Sanal Tavşan Aktif: ${targetSecs ~/ 60}:${(targetSecs % 60).toString().padLeft(2, '0')} dk/km',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
 
-                    LocationPermission permission =
-                        await Geolocator.checkPermission();
-                    if (permission == LocationPermission.denied) {
-                      permission = await Geolocator.requestPermission();
-                      if (permission == LocationPermission.denied) return;
-                    }
-
-                    if (context.mounted) _startCountdown(context);
-                  },
-                  backgroundColor: const Color(0xFF00E676),
-                  icon: const Icon(Icons.play_arrow, color: Colors.black),
-                  label: const Text(
-                    'Başla',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FloatingActionButton(
+                          heroTag: 'ai_btn',
+                          onPressed: () => _showPredictionDialog(context),
+                          backgroundColor: Colors.grey[850],
+                          tooltip: 'Akıllı Tahmin',
+                          child: const Icon(
+                            Icons.auto_awesome,
+                            color: Colors.deepPurpleAccent,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        FloatingActionButton(
+                          heroTag: 'pacer_btn',
+                          onPressed: () => _showPacerDialog(context),
+                          backgroundColor: Colors.orangeAccent,
+                          tooltip: 'Sanal Tavşan Kur',
+                          child: const Icon(Icons.pets, color: Colors.black),
+                        ),
+                        const SizedBox(width: 16),
+                        FloatingActionButton.extended(
+                          heroTag: 'start_btn',
+                          onPressed: () async {
+                            bool serviceEnabled =
+                                await Geolocator.isLocationServiceEnabled();
+                            if (!serviceEnabled) {
+                              if (context.mounted)
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('GPS Kapalı!')),
+                                );
+                              return;
+                            }
+                            LocationPermission permission =
+                                await Geolocator.checkPermission();
+                            if (permission == LocationPermission.denied) {
+                              permission = await Geolocator.requestPermission();
+                              if (permission == LocationPermission.denied)
+                                return;
+                            }
+                            if (context.mounted) _startCountdown(context);
+                          },
+                          backgroundColor: const Color(0xFF00E676),
+                          icon: const Icon(
+                            Icons.play_arrow,
+                            color: Colors.black,
+                          ),
+                          label: const Text(
+                            'Başla',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             );
           } else if (state is ActivityTracking) {
             return Row(
@@ -415,6 +786,8 @@ class TrackingPage extends StatelessWidget {
                   onPressed: () {
                     context.read<ActivityBloc>().add(StopActivity());
                     context.read<GhostRunnerCubit>().stopGhostRun();
+                    pacerTargetNotifier.value =
+                        null; // KOŞU BİTİNCE TAVŞANI SIFIRLA
                   },
                   backgroundColor: Colors.redAccent,
                   icon: const Icon(Icons.stop, color: Colors.white),
@@ -454,6 +827,8 @@ class TrackingPage extends StatelessWidget {
                   onPressed: () {
                     context.read<ActivityBloc>().add(StopActivity());
                     context.read<GhostRunnerCubit>().stopGhostRun();
+                    pacerTargetNotifier.value =
+                        null; // KOŞU BİTİNCE TAVŞANI SIFIRLA
                   },
                   backgroundColor: Colors.redAccent,
                   icon: const Icon(Icons.stop, color: Colors.white),
@@ -474,149 +849,6 @@ class TrackingPage extends StatelessWidget {
         },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-    );
-  }
-
-  void _showPredictionDialog(BuildContext context) {
-    final TextEditingController distanceController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: const Text(
-            'Hedef Mesafeni Gir (Metre)',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: TextField(
-            controller: distanceController,
-            keyboardType: TextInputType.number,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Örn: 5000 (5km için)',
-              hintStyle: const TextStyle(color: Colors.grey),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.grey[700]!),
-              ),
-              focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFF00E676)),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('İptal', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00E676),
-              ),
-              onPressed: () async {
-                final distanceText = distanceController.text.trim();
-                if (distanceText.isEmpty) return;
-                final distance = double.tryParse(distanceText);
-                if (distance == null) return;
-                Navigator.pop(dialogContext);
-
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) => AlertDialog(
-                    backgroundColor: Colors.grey[900],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(height: 16),
-                        const CircularProgressIndicator(
-                          color: Color(0xFF00E676),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Yapay Zeka Motoru Isıtılıyor...',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Sunucu uyku modundan çıkarılıyor.\nBu işlem ilk seferde 1-2 dakika sürebilir, lütfen bekleyin.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
-                );
-
-                try {
-                  final prediction = await sl<PredictionService>()
-                      .getPacePrediction(distance);
-                  if (context.mounted) Navigator.pop(context);
-
-                  if (context.mounted) {
-                    showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        backgroundColor: Colors.grey[900],
-                        title: const Row(
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              color: Colors.deepPurpleAccent,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Tahmin Sonucu',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ],
-                        ),
-                        content: Text(
-                          'Mevcut formuna ve günün bu saatine göre tahmini tempon:\n\n${prediction['predicted_pace_per_km']} dk/km',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text(
-                              'Tamam',
-                              style: TextStyle(color: Color(0xFF00E676)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) Navigator.pop(context);
-                  if (context.mounted)
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text(e.toString())));
-                }
-              },
-              child: const Text(
-                'Tahmin Al',
-                style: TextStyle(color: Colors.black),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }
@@ -722,6 +954,7 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
     String text =
         "Harika gidiyorsun. $km. kilometreyi tamamladın. Ortalama tempon $paceMins dakika, $paceSecs saniye.";
 
+    // HAYALET (GHOST) KONTROLÜ
     if (widget.ghostPosition != null && widget.userPosition != null) {
       final gap = const Distance().as(
         LengthUnit.Meter,
@@ -730,6 +963,18 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
       );
       text +=
           " Hayaletle arandaki fark yaklaşık ${gap.toInt()} metre. Tempoyu koru!";
+    }
+    // SANAL TAVŞAN (PACER) KONTROLÜ
+    else if (pacerTargetNotifier.value != null) {
+      double rabbitDist =
+          (_elapsedSeconds / pacerTargetNotifier.value!) * 1000.0;
+      double diff = widget.distanceMeters - rabbitDist;
+      if (diff >= 0) {
+        text += " Tavşanın ${diff.toInt()} metre önündesin. Mükemmel!";
+      } else {
+        text +=
+            " Tavşan ${diff.abs().toInt()} metre önünde. Tempoyu biraz artır!";
+      }
     }
 
     await _flutterTts.speak(text);
@@ -864,6 +1109,7 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
                 ],
               ),
 
+              // EĞER HAYALET (GHOST) AKTİFSE GÖSTER
               if (widget.ghostPosition != null &&
                   widget.userPosition != null) ...[
                 const SizedBox(height: 16),
@@ -895,6 +1141,59 @@ class _LiveRunHUDState extends State<LiveRunHUD> {
                             'Aralarındaki Fark: ${gap.toInt()} Metre',
                             style: const TextStyle(
                               color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ]
+              // EĞER SANAL TAVŞAN (PACER) AKTİFSE CANLI FARKI GÖSTER
+              else ...[
+                ValueListenableBuilder<int?>(
+                  valueListenable: pacerTargetNotifier,
+                  builder: (context, targetSecs, child) {
+                    if (targetSecs == null || _elapsedSeconds == 0)
+                      return const SizedBox.shrink();
+
+                    double rabbitDist = (_elapsedSeconds / targetSecs) * 1000.0;
+                    double diff = widget.distanceMeters - rabbitDist;
+                    String status = diff >= 0
+                        ? '+${diff.toInt()}m Öndesin'
+                        : '${diff.toInt()}m Geridesin';
+                    Color statusColor = diff >= 0
+                        ? Colors.greenAccent
+                        : Colors.redAccent;
+
+                    return Container(
+                      margin: const EdgeInsets.only(top: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orangeAccent.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.orangeAccent.withOpacity(0.5),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('🐇', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Tavşan Farkı: ',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            status,
+                            style: TextStyle(
+                              color: statusColor,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),

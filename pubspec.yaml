@@ -49,6 +49,9 @@ dependencies:
   flutter_tts: ^4.2.5
   flutter_native_splash: ^2.4.7
   flutter_launcher_icons: ^0.14.4
+  screenshot: ^3.0.0
+  share_plus: ^13.3.0
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:
