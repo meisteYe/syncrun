@@ -15,6 +15,68 @@ class ProfilePage extends StatelessWidget {
     }
   }
 
+  // İsim (Kullanıcı Adı) güncellemek için açılan pencere
+  void _showNameEditDialog(BuildContext context, String currentName) {
+    final controller = TextEditingController(text: currentName);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text(
+            'Kullanıcı Adını Güncelle',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: TextField(
+            controller: controller,
+            textCapitalization: TextCapitalization.words,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Yeni adınızı girin',
+              hintStyle: const TextStyle(color: Colors.grey),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey[700]!),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF00E676)),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E676),
+              ),
+              onPressed: () async {
+                final newName = controller.text.trim();
+                if (newName.isNotEmpty) {
+                  // Hem Firestore'u hem de Firebase Auth profilini güncelle
+                  await _updateUserStat('displayName', newName);
+                  await FirebaseAuth.instance.currentUser?.updateDisplayName(
+                    newName,
+                  );
+                }
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text(
+                'Kaydet',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // Kilo veya Yağ Oranını güncellemek için açılan pencere
   void _showEditDialog(
     BuildContext context,
@@ -80,7 +142,6 @@ class ProfilePage extends StatelessWidget {
   // Bu haftanın (Pzt-Pzr) toplam mesafesini hesaplayan yardımcı metod
   double _calculateWeeklyDistance(List<QueryDocumentSnapshot> docs) {
     final now = DateTime.now();
-    // Bu haftanın pazartesi gününün başlangıcını buluyoruz
     final startOfWeek = DateTime(
       now.year,
       now.month,
@@ -94,13 +155,11 @@ class ProfilePage extends StatelessWidget {
       final timestamp = data['createdAt'] as Timestamp?;
       if (timestamp != null) {
         final date = timestamp.toDate();
-        // Sadece bu haftaya ait koşuları topluyoruz
         if (date.isAfter(startOfWeek) || date.isAtSameMomentAs(startOfWeek)) {
           totalDistanceMeters += (data['totalDistance'] ?? 0.0);
         }
       }
     }
-    // Metreyi kilometreye çevir
     return totalDistanceMeters / 1000.0;
   }
 
@@ -123,7 +182,6 @@ class ProfilePage extends StatelessWidget {
       if (dist >= 5000) has5K = true;
       if (dist >= 10000) has10K = true;
 
-      // Gece kuşu ve erkenci kuş için saat kontrolü
       DateTime? runTime;
       if (data['startTime'] is String) {
         runTime = DateTime.tryParse(data['startTime'])?.toLocal();
@@ -221,6 +279,15 @@ class ProfilePage extends StatelessWidget {
               userSnapshot.data?.data() as Map<String, dynamic>? ?? {};
 
           // Veritabanından gelen kullanıcı değerleri
+          final String displayName =
+              userData['displayName'] ??
+              user.displayName ??
+              user.email?.split('@').first ??
+              'Kullanıcı';
+          final String initial = displayName.isNotEmpty
+              ? displayName[0].toUpperCase()
+              : 'S';
+
           final double weight = userData['weight']?.toDouble() ?? 67.5;
           final double bodyFat = userData['bodyFat']?.toDouble() ?? 18.5;
           final bool creatineTaken = userData['creatineTaken'] ?? false;
@@ -229,7 +296,6 @@ class ProfilePage extends StatelessWidget {
           final String ghostColor = userData['ghostColor'] ?? 'grey';
 
           return StreamBuilder<QuerySnapshot>(
-            // Kullanıcının tüm aktivitelerini dinliyoruz (Haftalık hedef ve rozetler için)
             stream: FirebaseFirestore.instance
                 .collection('activities')
                 .where('userId', isEqualTo: user.uid)
@@ -244,7 +310,6 @@ class ProfilePage extends StatelessWidget {
                 badges = _calculateBadges(docs);
               }
 
-              // Hedefimiz 5 KM (Maksimum progress 1.0 olmalı)
               double progress = weeklyKm / 5.0;
               if (progress > 1.0) progress = 1.0;
 
@@ -253,25 +318,47 @@ class ProfilePage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Kullanıcı Bilgisi
+                    // --- KULLANICI BİLGİSİ VE İSİM DÜZENLEME ---
                     CircleAvatar(
                       radius: 40,
                       backgroundColor: const Color(0xFF00E676).withOpacity(0.2),
-                      child: const Icon(
-                        Icons.person,
-                        size: 40,
-                        color: Color(0xFF00E676),
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF00E676),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.edit,
+                            color: Colors.grey,
+                            size: 20,
+                          ),
+                          onPressed: () =>
+                              _showNameEditDialog(context, displayName),
+                          tooltip: 'İsmi Düzenle',
+                        ),
+                      ],
+                    ),
                     Text(
-                      user.email ?? 'Kullanıcı',
+                      user.email ?? '',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(color: Colors.grey[500], fontSize: 14),
                     ),
                     const SizedBox(height: 32),
 
@@ -456,7 +543,7 @@ class ProfilePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
 
-                    // YENİ: KUPA ODASI (ROZETLER)
+                    // KUPA ODASI (ROZETLER)
                     _buildSectionTitle('Kupa Odası (Başarımlar)'),
                     GridView.builder(
                       shrinkWrap: true,

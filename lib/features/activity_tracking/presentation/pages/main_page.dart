@@ -4,7 +4,10 @@ import 'home_page.dart';
 import 'tracking_page.dart';
 import 'history_page.dart';
 import '../../../../features/profile/presentation/pages/profile_page.dart';
+import '../../../../features/leaderboard/presentation/pages/leaderboard_page.dart'; // YENİ
 import '../../../ghost_run/ghost_runner_cubit.dart';
+import '../../data/repositories/activity_repository.dart';
+import '../../../../injection_container.dart';
 
 final ValueNotifier<int> globalPageIndex = ValueNotifier<int>(0);
 
@@ -21,9 +24,14 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
+
+    // YENİ: UYGULAMA AÇILDIĞINDA EĞER İNTERNETSİZ KOŞULAR VARSA SUNUCUYA GÖNDER!
+    sl<ActivityRepository>().syncOfflineActivities();
+
     _pages = [
       HomePage(onStartRunTap: () => globalPageIndex.value = 1),
       const TrackingPage(),
+      const LeaderboardPage(), // YENİ: Liderlik Tablosu sekmesi
       const HistoryPage(),
       const ProfilePage(),
     ];
@@ -35,12 +43,10 @@ class _MainPageState extends State<MainPage> {
 
   @override
   Widget build(BuildContext context) {
-    // BLOCLISTENER İLE HAYALETİ TAKİP ET
     return BlocListener<GhostRunnerCubit, GhostRunnerState>(
       listenWhen: (previous, current) => !previous.isActive && current.isActive,
       listener: (context, state) {
-        // Hayalet yüklendiği an:
-        globalPageIndex.value = 1; // Haritaya geç
+        globalPageIndex.value = 1;
       },
       child: Scaffold(
         body: IndexedStack(index: globalPageIndex.value, children: _pages),
@@ -57,6 +63,10 @@ class _MainPageState extends State<MainPage> {
               label: 'Ana Sayfa',
             ),
             BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Harita'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.emoji_events),
+              label: 'Lig',
+            ), // YENİ
             BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Geçmiş'),
             BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
           ],

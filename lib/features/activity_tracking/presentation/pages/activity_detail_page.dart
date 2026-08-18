@@ -8,7 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'dart:ui';
 import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:fl_chart/fl_chart.dart'; // YENİ: GRAFİK PAKETİ EKLENDİ
+import 'package:fl_chart/fl_chart.dart';
 import '../../../../injection_container.dart';
 import '../../data/repositories/activity_repository.dart';
 import '../../../ghost_run/ghost_runner_cubit.dart';
@@ -26,81 +26,70 @@ class ActivityDetailPage extends StatelessWidget {
     required this.summaryData,
   });
 
-  // ------------------------------------------------------------------
-  // YENİ: TELEMETRİ VERİLERİNİ İŞLEYİP GRAFİK KOORDİNATLARI (FlSpot) ÇIKARTIR
-  // ------------------------------------------------------------------
-  Future<List<FlSpot>> _generatePaceSpots(String activityId) async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('activities')
-          .doc(activityId)
-          .collection('telemetry')
-          .orderBy('timeOffset')
-          .get();
+  Future<Map<String, dynamic>> _fetchActivityData(String activityId) async {
+    final snap = await FirebaseFirestore.instance
+        .collection('activities')
+        .doc(activityId)
+        .collection('telemetry')
+        .orderBy('timeOffset')
+        .get();
 
-      if (snap.docs.isEmpty) return [];
+    List<LatLng> route = [];
+    List<FlSpot> spots = [];
 
-      List<FlSpot> spots = [];
-      double totalDistance = 0;
-      LatLng? lastPos;
-      int? lastTime;
+    double totalDistance = 0;
+    LatLng? lastPos;
+    int? lastTime;
+    List<double> recentPaces = [];
 
-      // Ani zıplamaları yumuşatmak için hareketli ortalama (Moving Average) tamponu
-      List<double> recentPaces = [];
+    double lastSpotX = -1.0;
 
-      for (var doc in snap.docs) {
-        final data = doc.data();
-        final currentPos = LatLng(data['lat'], data['lng']);
-        final currentTime = data['timeOffset'] as int;
+    for (var doc in snap.docs) {
+      final data = doc.data();
+      final currentPos = LatLng(data['lat'], data['lng']);
+      final currentTime = data['timeOffset'] as int;
 
-        if (lastPos != null && lastTime != null) {
-          final dist = const Distance().as(
-            LengthUnit.Meter,
-            lastPos,
-            currentPos,
-          );
-          final timeDiff = currentTime - lastTime;
+      route.add(currentPos);
 
-          if (dist > 0 && timeDiff > 0) {
-            totalDistance += dist;
+      if (lastPos != null && lastTime != null) {
+        final dist = const Distance().as(LengthUnit.Meter, lastPos, currentPos);
+        final timeDiff = currentTime - lastTime;
 
-            // Eğer saniye olarak gelmediyse (milisaniye ise) düzeltme yap
-            double secondsDiff = timeDiff > 1000
-                ? timeDiff / 1000.0
-                : timeDiff.toDouble();
+        if (dist > 0 && timeDiff > 0) {
+          totalDistance += dist;
+          double secondsDiff = timeDiff > 1000
+              ? timeDiff / 1000.0
+              : timeDiff.toDouble();
+          double pace = (secondsDiff / 60.0) / (dist / 1000.0);
 
-            // Tempo hesaplama: (Geçen Süre dk) / (Mesafe km)
-            double pace = (secondsDiff / 60.0) / (dist / 1000.0);
+          if (pace > 2.0 && pace < 15.0) {
+            recentPaces.add(pace);
+            if (recentPaces.length > 5) recentPaces.removeAt(0);
 
-            // Aykırı verileri filtrele (2 dk/km'den hızlı veya 12 dk/km'den yavaşsa yoksay)
-            if (pace > 2.0 && pace < 12.0) {
-              recentPaces.add(pace);
-              if (recentPaces.length > 5) recentPaces.removeAt(0);
+            double avgPace =
+                recentPaces.reduce((a, b) => a + b) / recentPaces.length;
+            double spotX = totalDistance / 1000.0;
 
-              // 5 noktanın ortalamasını alarak grafiği pürüzsüzleştir
-              double avgPace =
-                  recentPaces.reduce((a, b) => a + b) / recentPaces.length;
-              spots.add(FlSpot(totalDistance / 1000.0, avgPace));
+            if (spotX > lastSpotX + 0.05) {
+              spots.add(FlSpot(spotX, avgPace));
+              lastSpotX = spotX;
             }
           }
         }
-        lastPos = currentPos;
-        lastTime = currentTime;
       }
-      return spots;
-    } catch (e) {
-      return [];
+      lastPos = currentPos;
+      lastTime = currentTime;
     }
+
+    return {'route': route, 'spots': spots};
   }
 
-  // ------------------------------------------------------------------
-  // STRAVA TARZI ŞEFFAF (TRANSPARENT) STICKER ÜRETİCİSİ
-  // ------------------------------------------------------------------
   Future<void> _takeScreenshotAndShare(
     BuildContext context,
     double distance,
     int durationInSeconds,
     String paceStr,
+    List<LatLng> routePoints,
   ) async {
     showDialog(
       context: context,
@@ -111,10 +100,6 @@ class ActivityDetailPage extends StatelessWidget {
     );
 
     try {
-      final routePoints = await sl<ActivityRepository>().getActivityRoute(
-        activityId,
-      );
-
       final stickerWidget = Directionality(
         textDirection: TextDirection.ltr,
         child: DefaultTextStyle(
@@ -342,26 +327,14 @@ class ActivityDetailPage extends StatelessWidget {
         "${startTime.day.toString().padLeft(2, '0')}.${startTime.month.toString().padLeft(2, '0')}.${startTime.year}";
 
     return Scaffold(
-      backgroundColor: Colors.grey[900], // Arka plan
+      backgroundColor: Colors.grey[900],
       appBar: AppBar(
         title: Text('$dateStr Koşusu'),
         backgroundColor: Colors.black,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.ios_share, color: Color(0xFF00E676)),
-            tooltip: 'Instagram İçin Paylaş',
-            onPressed: () => _takeScreenshotAndShare(
-              context,
-              distance,
-              durationInSeconds,
-              paceStr,
-            ),
-          ),
-        ],
       ),
-      body: FutureBuilder<List<LatLng>>(
-        future: sl<ActivityRepository>().getActivityRoute(activityId),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _fetchActivityData(activityId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -377,8 +350,10 @@ class ActivityDetailPage extends StatelessWidget {
             );
           }
 
-          final routePoints = snapshot.data;
-          if (routePoints == null || routePoints.isEmpty) {
+          final routePoints = (snapshot.data?['route'] as List<LatLng>?) ?? [];
+          final spots = (snapshot.data?['spots'] as List<FlSpot>?) ?? [];
+
+          if (routePoints.isEmpty) {
             return const Center(
               child: Text(
                 'Bu antrenman için rota verisi bulunamadı.',
@@ -387,71 +362,116 @@ class ActivityDetailPage extends StatelessWidget {
             );
           }
 
-          final bounds = LatLngBounds.fromPoints(routePoints);
+          LatLngBounds bounds = LatLngBounds.fromPoints(routePoints);
+
+          // KRİTİK DÜZELTME: EĞER KOŞU NOKTASI 0 METRE İSE (ZERO-AREA BOUNDS KORUMASI)
+          if (bounds.southWest.latitude == bounds.northEast.latitude &&
+              bounds.southWest.longitude == bounds.northEast.longitude) {
+            final p = routePoints.first;
+            bounds = LatLngBounds(
+              LatLng(p.latitude - 0.005, p.longitude - 0.005),
+              LatLng(p.latitude + 0.005, p.longitude + 0.005),
+            );
+          }
 
           return Column(
             children: [
-              // 1. HARİTA EKRANI (Üstte Sabit Yükseklik)
+              // Üst Kısım: Harita Alanı
               SizedBox(
                 height: 300,
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCameraFit: CameraFit.bounds(
-                      bounds: bounds,
-                      padding: const EdgeInsets.all(50.0),
-                    ),
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                    ),
-                  ),
+                child: Stack(
                   children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-                      userAgentPackageName: 'com.syncrun.app',
-                    ),
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: routePoints,
-                          strokeWidth: 6.0,
-                          color: const Color(0xFFFF5252),
+                    FlutterMap(
+                      options: MapOptions(
+                        initialCameraFit: CameraFit.bounds(
+                          bounds: bounds,
+                          padding: const EdgeInsets.all(50.0),
+                        ),
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                        ),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                          userAgentPackageName: 'com.syncrun.app',
+                        ),
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: routePoints,
+                              strokeWidth: 6.0,
+                              color: const Color(0xFFFF5252),
+                            ),
+                          ],
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: routePoints.first,
+                              width: 15,
+                              height: 15,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.greenAccent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.black,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Marker(
+                              point: routePoints.last,
+                              width: 15,
+                              height: 15,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.black,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: routePoints.first,
-                          width: 15,
-                          height: 15,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.greenAccent,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.black, width: 2),
-                            ),
+
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.ios_share,
+                            color: Color(0xFF00E676),
+                          ),
+                          tooltip: 'Instagram İçin Paylaş',
+                          onPressed: () => _takeScreenshotAndShare(
+                            context,
+                            distance,
+                            durationInSeconds,
+                            paceStr,
+                            routePoints,
                           ),
                         ),
-                        Marker(
-                          point: routePoints.last,
-                          width: 15,
-                          height: 15,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.black, width: 2),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
               ),
 
-              // 2. DETAYLAR VE GRAFİK EKRANI (Aşağıya Doğru Kaydırılabilir)
+              // 2. DETAYLAR VE GRAFİK EKRANI
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16),
@@ -515,24 +535,8 @@ class ActivityDetailPage extends StatelessWidget {
                       const SizedBox(height: 16),
 
                       // YENİ: TEMPO (PACE) GRAFİĞİ ÇİZİM ALANI
-                      FutureBuilder<List<FlSpot>>(
-                        future: _generatePaceSpots(activityId),
-                        builder: (context, paceSnapshot) {
-                          if (paceSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const SizedBox(
-                              height: 250,
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: Color(0xFF00E676),
-                                ),
-                              ),
-                            );
-                          }
-
-                          final spots = paceSnapshot.data ?? [];
-                          if (spots.isEmpty) {
-                            return const SizedBox(
+                      spots.length < 2
+                          ? const SizedBox(
                               height: 200,
                               child: Center(
                                 child: Text(
@@ -540,40 +544,58 @@ class ActivityDetailPage extends StatelessWidget {
                                   style: TextStyle(color: Colors.grey),
                                 ),
                               ),
-                            );
-                          }
-
-                          return Container(
-                            height: 250,
-                            padding: const EdgeInsets.fromLTRB(16, 24, 24, 16),
-                            decoration: BoxDecoration(
-                              color: Colors.black,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.1),
+                            )
+                          : Container(
+                              height: 250,
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                24,
+                                24,
+                                16,
                               ),
-                            ),
-                            child: LineChart(
-                              LineChartData(
-                                gridData: FlGridData(
-                                  show: true,
-                                  drawVerticalLine: false,
-                                  getDrawingHorizontalLine: (value) => FlLine(
-                                    color: Colors.white.withOpacity(0.1),
-                                    strokeWidth: 1,
-                                  ),
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.1),
                                 ),
-                                titlesData: FlTitlesData(
-                                  bottomTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      reservedSize: 22,
-                                      getTitlesWidget: (value, meta) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: 8.0,
-                                        ),
-                                        child: Text(
-                                          '${value.toStringAsFixed(1)}k',
+                              ),
+                              child: LineChart(
+                                LineChartData(
+                                  gridData: FlGridData(
+                                    show: true,
+                                    drawVerticalLine: false,
+                                    getDrawingHorizontalLine: (value) => FlLine(
+                                      color: Colors.white.withOpacity(0.1),
+                                      strokeWidth: 1,
+                                    ),
+                                  ),
+                                  titlesData: FlTitlesData(
+                                    bottomTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        reservedSize: 22,
+                                        getTitlesWidget: (value, meta) =>
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 8.0,
+                                              ),
+                                              child: Text(
+                                                '${value.toStringAsFixed(1)}k',
+                                                style: const TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ),
+                                      ),
+                                    ),
+                                    leftTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        reservedSize: 32,
+                                        getTitlesWidget: (value, meta) => Text(
+                                          '${value.toInt()}:00',
                                           style: const TextStyle(
                                             color: Colors.grey,
                                             fontSize: 10,
@@ -581,57 +603,41 @@ class ActivityDetailPage extends StatelessWidget {
                                         ),
                                       ),
                                     ),
+                                    topTitles: const AxisTitles(
+                                      sideTitles: SideTitles(showTitles: false),
+                                    ),
+                                    rightTitles: const AxisTitles(
+                                      sideTitles: SideTitles(showTitles: false),
+                                    ),
                                   ),
-                                  leftTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      reservedSize: 32,
-                                      getTitlesWidget: (value, meta) => Text(
-                                        '${value.toInt()}:00',
-                                        style: const TextStyle(
-                                          color: Colors.grey,
-                                          fontSize: 10,
-                                        ),
+                                  borderData: FlBorderData(show: false),
+                                  lineBarsData: [
+                                    LineChartBarData(
+                                      spots: spots,
+                                      isCurved: true,
+                                      curveSmoothness: 0.35,
+                                      color: const Color(0xFF00E676),
+                                      barWidth: 3,
+                                      isStrokeCapRound: true,
+                                      dotData: const FlDotData(show: false),
+                                      belowBarData: BarAreaData(
+                                        show: true,
+                                        color: const Color(
+                                          0xFF00E676,
+                                        ).withOpacity(0.2),
                                       ),
                                     ),
-                                  ),
-                                  topTitles: const AxisTitles(
-                                    sideTitles: SideTitles(showTitles: false),
-                                  ),
-                                  rightTitles: const AxisTitles(
-                                    sideTitles: SideTitles(showTitles: false),
-                                  ),
+                                  ],
                                 ),
-                                borderData: FlBorderData(show: false),
-                                lineBarsData: [
-                                  LineChartBarData(
-                                    spots: spots,
-                                    isCurved: true,
-                                    curveSmoothness: 0.35,
-                                    color: const Color(0xFF00E676),
-                                    barWidth: 3,
-                                    isStrokeCapRound: true,
-                                    dotData: const FlDotData(show: false),
-                                    belowBarData: BarAreaData(
-                                      show: true,
-                                      color: const Color(
-                                        0xFF00E676,
-                                      ).withOpacity(0.2),
-                                    ),
-                                  ),
-                                ],
                               ),
                             ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 32), // Alt boşluk
+                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
               ),
 
-              // 3. YARIŞ BUTONU PANELİ (Ekranın en altında sabit kalır)
+              // 3. YARIŞ BUTONU PANELİ
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
@@ -704,9 +710,6 @@ class ActivityDetailPage extends StatelessWidget {
   }
 }
 
-// ------------------------------------------------------------------
-// ROTA ÇİZİCİ (CUSTOM PAINTER)
-// ------------------------------------------------------------------
 class RoutePainter extends CustomPainter {
   final List<LatLng> points;
   final Color color;

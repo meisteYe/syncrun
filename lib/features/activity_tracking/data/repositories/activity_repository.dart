@@ -1,94 +1,180 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ActivityRepository {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  static const String _offlineKey = 'offline_activities';
 
+  // 1. MEVCUT KOŞUYU KAYDETME MANTIĞI (GÜVENLİK KALKANI)
   Future<void> saveActivity({
     required List<LatLng> routePoints,
     required double totalDistance,
     required DateTime startTime,
     required DateTime endTime,
   }) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('Kullanıcı oturumu bulunamadı.');
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-    // 1. Özet veriyi 'activities' koleksiyonuna kaydet
-    final activityRef = await _firestore.collection('activities').add({
+    final activityData = {
       'userId': user.uid,
       'totalDistance': totalDistance,
       'startTime': startTime.toIso8601String(),
       'endTime': endTime.toIso8601String(),
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
 
-    // 2. Ham GPS noktalarını Hayalet Koşu mantığına uygun (lat, lng, timeOffset) şekilde kaydediyoruz
-    final batch = _firestore.batch();
-    final pointsRef = activityRef.collection('telemetry');
+    final telemetryData = routePoints
+        .asMap()
+        .entries
+        .map(
+          (e) => {
+            'lat': e.value.latitude,
+            'lng': e.value.longitude,
+            'timeOffset': e.key * 1000,
+          },
+        )
+        .toList();
 
-    int totalSeconds = endTime.difference(startTime).inSeconds;
-
-    for (int i = 0; i < routePoints.length; i++) {
-      final point = routePoints[i];
-      final docRef = pointsRef.doc();
-
-      // Toplam geçen süreyi kaydedilen noktalara eşit olarak dağıtıp timeOffset (saniye) buluyoruz
-      int timeOffset = routePoints.length > 1
-          ? (i * (totalSeconds / (routePoints.length - 1))).round()
-          : 0;
-
-      batch.set(docRef, {
-        'lat': point
-            .latitude, // 'latitude' yerine 'lat' oldu (GhostRunner için gerekli)
-        'lng': point
-            .longitude, // 'longitude' yerine 'lng' oldu (GhostRunner için gerekli)
-        'timeOffset': timeOffset, // Hangi saniyede bu koordinattaydı?
-        'sequence': i,
-      });
+    try {
+      // 5 saniye içinde Firebase'e yazmayı dene. (İnternet var mı testi)
+      await _saveToFirebase(
+        activityData,
+        telemetryData,
+      ).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      // İNTERNET YOK VEYA SUNUCU ÇÖKTÜ: Veriyi yerel hafızaya hapset!
+      await _saveLocally(activityData, telemetryData);
     }
+  }
+
+  // 2. FİREBASE'E YAZMA VE LİDERLİK TABLOSUNU GÜNCELLEME
+  Future<void> _saveToFirebase(
+    Map<String, dynamic> activityData,
+    List<Map<String, dynamic>> telemetryData,
+  ) async {
+    final docRef = await FirebaseFirestore.instance
+        .collection('activities')
+        .add(activityData);
+    final batch = FirebaseFirestore.instance.batch();
+
+    for (var point in telemetryData) {
+      final pointRef = docRef.collection('telemetry').doc();
+      batch.set(pointRef, point);
+    }
+    await batch.commit();
+
+    // YENİ: LİDERLİK TABLOSUNU GÜNCELLEME (HATASIZ VE HIZLI YÖNTEM: FieldValue.increment)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
+
+      // Sunucuya mesafeyi doğrudan mevcut değerin üzerine eklemesini söylüyoruz
+      await userRef.set({
+        'leaderboardDistance': FieldValue.increment(
+          activityData['totalDistance'],
+        ),
+      }, SetOptions(merge: true));
+    }
+  }
+
+  // 3. HATALI KOŞUYU SİLME VE LİDERLİK TABLOSUNDAN EKSİLTME
+  Future<void> deleteActivity(
+    String activityId,
+    double distanceToDeduct,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // 1. Önce alt koleksiyondaki 'telemetry' verilerini sil (GPS verileri)
+    final telemetrySnap = await FirebaseFirestore.instance
+        .collection('activities')
+        .doc(activityId)
+        .collection('telemetry')
+        .get();
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (var doc in telemetrySnap.docs) {
+      batch.delete(doc.reference);
+    }
+
+    // 2. Ana aktivite belgesini sil
+    final activityRef = FirebaseFirestore.instance
+        .collection('activities')
+        .doc(activityId);
+    batch.delete(activityRef);
 
     await batch.commit();
+
+    // 3. Kullanıcının liderlik puanından sildiğimiz bu koşunun mesafesini düş
+    // YENİ: Hata veren Transaction yerine FieldValue.increment(-deger) kullandık!
+    final userRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid);
+    await userRef.set({
+      'leaderboardDistance': FieldValue.increment(-distanceToDeduct),
+    }, SetOptions(merge: true));
   }
 
-  Future<List<Map<String, dynamic>>> getUserActivities() async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('Kullanıcı oturumu bulunamadı.');
+  // 4. YEREL HAFIZAYA YAZMA (OFFLINE KASA)
+  Future<void> _saveLocally(
+    Map<String, dynamic> activityData,
+    List<Map<String, dynamic>> telemetryData,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> offlineList = prefs.getStringList(_offlineKey) ?? [];
 
-    try {
-      final snapshot = await _firestore
-          .collection('activities')
-          .where('userId', isEqualTo: user.uid)
-          .orderBy('createdAt', descending: true)
-          .get();
+    activityData['createdAt'] = DateTime.now().toIso8601String();
 
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['id'] = doc.id;
-        return data;
-      }).toList();
-    } catch (e) {
-      throw Exception('Veriler çekilirken bir hata oluştu: $e');
+    final localData = {'activity': activityData, 'telemetry': telemetryData};
+    offlineList.add(jsonEncode(localData));
+    await prefs.setStringList(_offlineKey, offlineList);
+  }
+
+  // 5. İNTERNET GELDİĞİNDE VERİLERİ SUNUCUYA İTME (BACKGROUND SYNC)
+  Future<void> syncOfflineActivities() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> offlineList = prefs.getStringList(_offlineKey) ?? [];
+
+    if (offlineList.isEmpty) return;
+
+    List<String> remainingList = [];
+
+    for (String item in offlineList) {
+      try {
+        final data = jsonDecode(item);
+        final activityData = data['activity'] as Map<String, dynamic>;
+        final telemetryData = List<Map<String, dynamic>>.from(
+          data['telemetry'],
+        );
+
+        activityData['createdAt'] = FieldValue.serverTimestamp();
+        await _saveToFirebase(
+          activityData,
+          telemetryData,
+        ).timeout(const Duration(seconds: 5));
+      } catch (e) {
+        remainingList.add(item);
+      }
     }
+    await prefs.setStringList(_offlineKey, remainingList);
   }
 
+  // 6. GEÇMİŞ ROTA GETİRİCİSİ (Detay sayfası için)
   Future<List<LatLng>> getActivityRoute(String activityId) async {
-    try {
-      final snapshot = await _firestore
-          .collection('activities')
-          .doc(activityId)
-          .collection('telemetry')
-          .orderBy('sequence')
-          .get();
+    final snap = await FirebaseFirestore.instance
+        .collection('activities')
+        .doc(activityId)
+        .collection('telemetry')
+        .orderBy('timeOffset')
+        .get();
 
-      // Veritabanındaki yeni isimlendirmeye (lat, lng) göre okuma yapıyoruz
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        return LatLng(data['lat'] as double, data['lng'] as double);
-      }).toList();
-    } catch (e) {
-      throw Exception('Rota verileri çekilirken hata oluştu: $e');
-    }
+    return snap.docs.map((doc) {
+      final data = doc.data();
+      return LatLng(data['lat'], data['lng']);
+    }).toList();
   }
 }
