@@ -4,10 +4,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// DI ve Servisler (Yollar projenin yapısına göre ufak değişebilir)
+import '../../../../injection_container.dart';
+import '../../../../core/services/health_service.dart';
+
 class ActivityRepository {
   static const String _offlineKey = 'offline_activities';
 
-  // 1. MEVCUT KOŞUYU KAYDETME MANTIĞI (GÜVENLİK KALKANI)
+  // 1. MEVCUT KOŞUYU KAYDETME MANTIĞI (GÜVENLİK KALKANI & SAĞLIK ENTEGRASYONU)
   Future<void> saveActivity({
     required List<LatLng> routePoints,
     required double totalDistance,
@@ -47,6 +51,21 @@ class ActivityRepository {
       // İNTERNET YOK VEYA SUNUCU ÇÖKTÜ: Veriyi yerel hafızaya hapset!
       await _saveLocally(activityData, telemetryData);
     }
+
+    // --- YENİ: APPLE HEALTH & GOOGLE FIT ENTEGRASYONU ---
+    // Koşu bittiği an, internet olsun veya olmasın veriyi telefonun sağlık uygulamasına atıyoruz.
+    try {
+      await sl<HealthService>().saveWorkout(
+        startTime: startTime,
+        endTime: endTime,
+        distanceMeters: totalDistance,
+        activityType:
+            'running', // İleride Multi-Sport eklenince burası dinamik olacak
+      );
+    } catch (e) {
+      // Kullanıcı sağlık izinlerini reddetmişse sistemi çökertmemek için hatayı yutuyoruz.
+      print("Health Service Hatası: $e");
+    }
   }
 
   // 2. FİREBASE'E YAZMA VE LİDERLİK TABLOSUNU GÜNCELLEME
@@ -65,7 +84,7 @@ class ActivityRepository {
     }
     await batch.commit();
 
-    // YENİ: LİDERLİK TABLOSUNU GÜNCELLEME (HATASIZ VE HIZLI YÖNTEM: FieldValue.increment)
+    // LİDERLİK TABLOSUNU GÜNCELLEME (HATASIZ VE HIZLI YÖNTEM: FieldValue.increment)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userRef = FirebaseFirestore.instance
@@ -110,7 +129,6 @@ class ActivityRepository {
     await batch.commit();
 
     // 3. Kullanıcının liderlik puanından sildiğimiz bu koşunun mesafesini düş
-    // YENİ: Hata veren Transaction yerine FieldValue.increment(-deger) kullandık!
     final userRef = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid);

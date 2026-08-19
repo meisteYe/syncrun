@@ -52,6 +52,8 @@ dependencies:
   screenshot: ^3.0.0
   share_plus: ^13.3.0
   fl_chart: ^1.2.0
+  health: ^13.3.2
+  permission_handler: ^13.0.1
 
 dev_dependencies:
   flutter_test:
@@ -95,3 +97,6 @@ flutter_native_splash:
     color: "#121212"
     image: "assets/logo.png"
     icon_background_color: "#121212" # Bulanıklığı önleyen sihirli ayar
+
+dependency_overrides:
+  permission_handler: 11.3.1

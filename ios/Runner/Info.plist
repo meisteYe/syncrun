@@ -47,5 +47,10 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- SyncRun Fit: Apple Health İzinleri -->
+		<key>NSHealthShareUsageDescription</key>
+		<string>SyncRun Fit, kondisyonunuzu analiz edebilmek için adım ve temel sağlık verilerinizi okumaya ihtiyaç duyar.</string>
+		<key>NSHealthUpdateUsageDescription</key>
+		<string>SyncRun Fit; tamamladığınız koşu, yürüyüş ve fitness antrenmanlarınızı, toplam mesafenizi ve yaktığınız kaloriyi Apple Health'e kaydeder.</string>
 	</dict>
 </plist>

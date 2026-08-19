@@ -5,6 +5,13 @@
     
     <!-- Uygulama arka plandayken veya ekran kapalıyken konumu takip etmeye devam edebilmek için (Android 10+) -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- SyncRun Fit: Fiziksel Aktivite ve Adım Sayar İzni -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+    
+    <!-- SyncRun Fit: Health Connect / Google Fit Yazma İzinleri -->
+    <uses-permission android:name="android.permission.health.WRITE_DISTANCE"/>
+    <uses-permission android:name="android.permission.health.WRITE_EXERCISE"/>
+    <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED"/>
     
     <application
         android:label="syncrun"

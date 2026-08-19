@@ -16,6 +16,7 @@ import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'core/services/location_service.dart';
 
 import 'core/network/prediction_service.dart';
+import 'core/services/health_service.dart';
 
 final sl = GetIt.instance; // sl: Service Locator
 
@@ -40,4 +41,5 @@ Future<void> init() async {
   sl.registerLazySingleton(() => FirebaseAuth.instance);
 
   sl.registerLazySingleton(() => PredictionService());
+  sl.registerLazySingleton(() => HealthService());
 }

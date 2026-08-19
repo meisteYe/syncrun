@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:permission_handler/permission_handler.dart'; // YENİ: İzin paketi eklendi
 import '../bloc/activity_bloc.dart';
 import '../bloc/activity_event.dart';
 import '../bloc/activity_state.dart';
@@ -15,6 +16,7 @@ import '../../../../core/network/prediction_service.dart';
 import '../../../../injection_container.dart';
 import 'dart:ui';
 import '../../../ghost_run/ghost_runner_cubit.dart';
+import '../../../../core/services/health_service.dart'; // YENİ: Health Service içeri aktarıldı
 
 // YENİ: SANAL TAVŞANIN HIZINI (Saniye cinsinden) TUTAN KONTROLCÜ
 final ValueNotifier<int?> pacerTargetNotifier = ValueNotifier<int?>(null);
@@ -723,6 +725,7 @@ class TrackingPage extends StatelessWidget {
                         FloatingActionButton.extended(
                           heroTag: 'start_btn',
                           onPressed: () async {
+                            // 1. Önce GPS iznini kontrol et
                             bool serviceEnabled =
                                 await Geolocator.isLocationServiceEnabled();
                             if (!serviceEnabled) {
@@ -739,6 +742,20 @@ class TrackingPage extends StatelessWidget {
                               if (permission == LocationPermission.denied)
                                 return;
                             }
+
+                            // 2. YENİ: Başlamadan hemen önce Fiziksel Aktivite ve Health Connect izinlerini sor
+                            if (await Permission.activityRecognition.isDenied) {
+                              await Permission.activityRecognition.request();
+                            }
+
+                            // Health Servisi için izin penceresini aç
+                            try {
+                              await sl<HealthService>().requestPermissions();
+                            } catch (e) {
+                              print("Sağlık izni reddedildi veya hata: $e");
+                            }
+
+                            // 3. Koşuyu Başlat
                             if (context.mounted) _startCountdown(context);
                           },
                           backgroundColor: const Color(0xFF00E676),
